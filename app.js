@@ -5,7 +5,7 @@ import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
+import JSZip from "https://esm.sh/jszip@3.10.1";
 import { Evaluator, Brush, SUBTRACTION } from "three-bvh-csg";
 
 const viewport = document.getElementById("viewport");
@@ -2209,6 +2209,8 @@ exportZipBtn.addEventListener("click", async () => {
   const zip = new JSZip();
   const exporter = new STLExporter();
   let success = 0;
+  /** Per-file failure reasons surfaced to the status text and console. */
+  const failures = [];
 
   setStatus(`${t("statusBatch")}: ${batchFiles.length}\nProcessing...`);
 
@@ -2224,7 +2226,7 @@ exportZipBtn.addEventListener("click", async () => {
       activeBase.position.set(0, 0, 0);
       placeEmblem(activeBase, mesh, inverse, batchLift, batchInset);
       const combined = buildCombinedMeshForExport(activeBase, mesh, inverse);
-      if (!combined) throw new Error("Batch combined export failed");
+      if (!combined) throw new Error("Batch combined export failed (CSG returned null)");
       const stl = exporter.parse(combined, { binary: false });
       const name = file.name.replace(/\.svg$/i, "") || "model";
       zip.file(`${name}_with_base.stl`, stl);
@@ -2234,12 +2236,16 @@ exportZipBtn.addEventListener("click", async () => {
       mesh.geometry.dispose();
       mesh.material.dispose();
     } catch (err) {
-      // Skip broken files and continue batch.
+      failures.push(`${file.name}: ${err?.message || err}`);
+      // eslint-disable-next-line no-console
+      console.error("[seal-generator] batch export failure", file.name, err);
     }
   }
 
   if (success === 0) {
-    setStatus(`${t("statusError")}: no files were converted`);
+    setStatus(
+      [`${t("statusError")}: no files were converted`, ...failures.slice(0, 5)].join("\n")
+    );
     return;
   }
 
@@ -2251,7 +2257,13 @@ exportZipBtn.addEventListener("click", async () => {
   a.click();
   URL.revokeObjectURL(url);
 
-  setStatus(`${t("statusBatch")}: ${batchFiles.length}\nConverted: ${success}`);
+  setStatus(
+    [
+      `${t("statusBatch")}: ${batchFiles.length}`,
+      `Converted: ${success}`,
+      ...(failures.length ? [`Failed: ${failures.length}`, ...failures.slice(0, 5)] : []),
+    ].join("\n")
+  );
 });
 
 batchSvgFilesInput.addEventListener("change", (e) => {
