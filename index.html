@@ -158,6 +158,7 @@
             <span id="librarySingleLabel">Library SVG (single)</span>
             <select id="librarySingle"></select>
           </label>
+          <button id="libraryPreviewBtn">Preview selected</button>
           <button id="libraryLoadSingleBtn">Load from library</button>
           <label class="field">
             <span id="svgFileLabel">SVG file</span>
@@ -297,6 +298,7 @@
             <span id="batchLibraryLabel">Library SVG (multiple)</span>
             <select id="batchLibraryList" multiple size="8"></select>
           </label>
+          <button id="batchPreviewBtn">Preview selected</button>
           <button id="batchAddLibraryBtn">Add selected from library</button>
           <label class="field">
             <span id="batchSvgLabel">Batch SVG files</span>
@@ -311,6 +313,20 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js"></script>
+
+    <div id="libraryPreviewModal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-head">
+          <strong id="libraryPreviewTitle">Library Preview</strong>
+          <button id="libraryPreviewCloseBtn" class="modal-close" type="button">×</button>
+        </div>
+        <p id="libraryPreviewMeta" class="hint"></p>
+        <div class="svg-preview-wrap">
+          <img id="libraryPreviewImg" alt="SVG preview" />
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="./app.js"></script>
   </body>
   </html>

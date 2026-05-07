@@ -80,9 +80,16 @@ const batchLiftInput = document.getElementById("batchLift");
 const batchInsetInput = document.getElementById("batchInset");
 const libraryCategoryInput = document.getElementById("libraryCategory");
 const librarySingleInput = document.getElementById("librarySingle");
+const libraryPreviewBtn = document.getElementById("libraryPreviewBtn");
 const libraryLoadSingleBtn = document.getElementById("libraryLoadSingleBtn");
 const batchLibraryListInput = document.getElementById("batchLibraryList");
+const batchPreviewBtn = document.getElementById("batchPreviewBtn");
 const batchAddLibraryBtn = document.getElementById("batchAddLibraryBtn");
+const libraryPreviewModal = document.getElementById("libraryPreviewModal");
+const libraryPreviewTitle = document.getElementById("libraryPreviewTitle");
+const libraryPreviewMeta = document.getElementById("libraryPreviewMeta");
+const libraryPreviewImg = document.getElementById("libraryPreviewImg");
+const libraryPreviewCloseBtn = document.getElementById("libraryPreviewCloseBtn");
 
 const densityOut = document.getElementById("densityOut");
 
@@ -118,6 +125,7 @@ const i18n = {
     sidebarSide: "Sidebar",
     libraryCategory: "Library category",
     librarySingle: "Library SVG (single)",
+    previewSelected: "Preview selected",
     loadFromLibrary: "Load from library",
     batchLibrary: "Library SVG (multiple)",
     batchAddLibrary: "Add selected from library",
@@ -200,6 +208,7 @@ const i18n = {
     sidebarSide: "Сайдбар",
     libraryCategory: "Категория библиотеки",
     librarySingle: "SVG из библиотеки (один)",
+    previewSelected: "Предпросмотр выбранного",
     loadFromLibrary: "Загрузить из библиотеки",
     batchLibrary: "SVG из библиотеки (несколько)",
     batchAddLibrary: "Добавить выбранные из библиотеки",
@@ -491,6 +500,26 @@ function updateLibraryItemLists() {
   }
 }
 
+function closeLibraryPreview() {
+  libraryPreviewModal.classList.add("hidden");
+}
+
+async function openLibraryPreview(path) {
+  if (!path) return;
+  try {
+    const response = await fetch(path);
+    if (!response.ok) throw new Error("preview fetch failed");
+    const svgRaw = await response.text();
+    const item = libraryManifest.find((x) => x.path === path);
+    libraryPreviewTitle.textContent = item?.name || t("previewSelected");
+    libraryPreviewMeta.textContent = `${item?.category || ""}`;
+    libraryPreviewImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgRaw)}`;
+    libraryPreviewModal.classList.remove("hidden");
+  } catch (_err) {
+    setStatus(`${t("statusError")}: library preview load failed`);
+  }
+}
+
 async function loadLibraryManifest() {
   try {
     const response = await fetch("./wh40k/library-manifest.json");
@@ -519,6 +548,8 @@ function applyLocale() {
   document.getElementById("sidebarSideLabel").textContent = t("sidebarSide");
   document.getElementById("libraryCategoryLabel").textContent = t("libraryCategory");
   document.getElementById("librarySingleLabel").textContent = t("librarySingle");
+  document.getElementById("libraryPreviewBtn").textContent = t("previewSelected");
+  document.getElementById("batchPreviewBtn").textContent = t("previewSelected");
   document.getElementById("libraryLoadSingleBtn").textContent = t("loadFromLibrary");
   document.getElementById("batchLibraryLabel").textContent = t("batchLibrary");
   document.getElementById("batchAddLibraryBtn").textContent = t("batchAddLibrary");
@@ -1643,6 +1674,14 @@ libraryLoadSingleBtn.addEventListener("click", async () => {
   }
 });
 
+libraryPreviewBtn.addEventListener("click", () => openLibraryPreview(librarySingleInput.value));
+
+batchPreviewBtn.addEventListener("click", () => {
+  const firstSelected = batchLibraryListInput.selectedOptions?.[0];
+  if (!firstSelected) return;
+  openLibraryPreview(firstSelected.value);
+});
+
 batchAddLibraryBtn.addEventListener("click", async () => {
   const selected = Array.from(batchLibraryListInput.selectedOptions || []);
   if (selected.length === 0) return;
@@ -1660,6 +1699,11 @@ batchAddLibraryBtn.addEventListener("click", async () => {
   batchFiles = [...batchFiles, ...added];
   updateBatchButtonState();
   setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
+});
+
+libraryPreviewCloseBtn.addEventListener("click", closeLibraryPreview);
+libraryPreviewModal.addEventListener("click", (e) => {
+  if (e.target === libraryPreviewModal) closeLibraryPreview();
 });
 
 flatViewBtn.addEventListener("click", () => {

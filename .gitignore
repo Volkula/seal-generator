@@ -1,6 +1,3 @@
 *.stl
-wh40k/
-!wh40k/
-wh40k/*
-!wh40k/library-manifest.json
+desktop.ini
 __pycache__/
