@@ -52,6 +52,27 @@
         <input id="baseStlFile" type="file" accept=".stl,model/stl" />
       </label>
 
+      <label class="field checkbox">
+        <input id="generateBase" type="checkbox" />
+        <span id="generateBaseLabel">Generate round base</span>
+      </label>
+
+      <label class="field">
+        <span id="baseDiameterLabel">Base diameter (mm)</span>
+        <div class="range-row">
+          <input id="baseDiameter" type="range" min="10" max="200" step="1" value="40" />
+          <input id="baseDiameterValue" type="number" min="10" max="200" step="1" value="40" />
+        </div>
+      </label>
+
+      <label class="field">
+        <span id="baseThicknessLabel">Base thickness (mm)</span>
+        <div class="range-row">
+          <input id="baseThickness" type="range" min="0.5" max="20" step="0.1" value="2" />
+          <input id="baseThicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
+        </div>
+      </label>
+
       <label class="field">
         <span id="sizeLabel">Size (max dimension, mm)</span>
         <div class="range-row">
@@ -100,7 +121,13 @@
       <button id="exportBtn" disabled>Export STL</button>
       <button id="exportCombinedBtn" disabled>Export STL (with base)</button>
       <button id="exportZipBtn" disabled>Export ZIP (batch)</button>
+      <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
+      <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
       <button id="flatViewBtn">Flat View</button>
+      <div class="row-buttons">
+        <button id="undoBtn">Undo</button>
+        <button id="redoBtn">Redo</button>
+      </div>
       <pre id="status">Load an SVG to start.</pre>
       <p class="license-note" id="licenseNote">
         All code and visual assets in this repo are released under CC0 1.0 (public domain).

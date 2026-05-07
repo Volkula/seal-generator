@@ -9,6 +9,11 @@ import JSZip from "https://esm.sh/jszip@3.10.1";
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
 const baseStlFileInput = document.getElementById("baseStlFile");
+const generateBaseInput = document.getElementById("generateBase");
+const baseDiameterInput = document.getElementById("baseDiameter");
+const baseDiameterValueInput = document.getElementById("baseDiameterValue");
+const baseThicknessInput = document.getElementById("baseThickness");
+const baseThicknessValueInput = document.getElementById("baseThicknessValue");
 const themeSelect = document.getElementById("themeSelect");
 const langSelect = document.getElementById("langSelect");
 const sizeInput = document.getElementById("size");
@@ -25,6 +30,10 @@ const exportBtn = document.getElementById("exportBtn");
 const exportCombinedBtn = document.getElementById("exportCombinedBtn");
 const exportZipBtn = document.getElementById("exportZipBtn");
 const flatViewBtn = document.getElementById("flatViewBtn");
+const fitBaseToEmblemBtn = document.getElementById("fitBaseToEmblemBtn");
+const fitEmblemToBaseBtn = document.getElementById("fitEmblemToBaseBtn");
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
 const statusEl = document.getElementById("status");
 
 const densityOut = document.getElementById("densityOut");
@@ -33,9 +42,13 @@ let svgText = "";
 let svgName = "model";
 let currentMesh = null;
 let currentBaseMesh = null;
+let uploadedBaseMesh = null;
 let currentLang = "en";
 let uploadedFiles = [];
 let isFlatView = false;
+let history = [];
+let historyIndex = -1;
+let isApplyingHistory = false;
 
 const i18n = {
   en: {
@@ -45,6 +58,9 @@ const i18n = {
     language: "Language",
     svgFile: "SVG file",
     baseStl: "Base STL (optional)",
+    generateBase: "Generate round base",
+    baseDiameter: "Base diameter (mm)",
+    baseThickness: "Base thickness (mm)",
     size: "Size (max dimension, mm)",
     thickness: "Thickness (mm)",
     lift: "Lift over base (mm)",
@@ -55,6 +71,10 @@ const i18n = {
     export: "Export STL",
     exportCombined: "Export STL (with base)",
     exportZip: "Export ZIP (batch)",
+    fitBaseToEmblem: "Auto-fit base to emblem",
+    fitEmblemToBase: "Auto-fit emblem to base",
+    undo: "Undo",
+    redo: "Redo",
     flatView: "Flat View",
     perspectiveView: "3D View",
     statusIdle: "Load an SVG to start.",
@@ -79,6 +99,9 @@ const i18n = {
     language: "Язык",
     svgFile: "SVG файл",
     baseStl: "Основание STL (опционально)",
+    generateBase: "Сгенерировать круглое основание",
+    baseDiameter: "Диаметр основания (мм)",
+    baseThickness: "Толщина основания (мм)",
     size: "Размер (макс. габарит, мм)",
     thickness: "Толщина (мм)",
     lift: "Подъем над основанием (мм)",
@@ -89,6 +112,10 @@ const i18n = {
     export: "Экспорт STL",
     exportCombined: "Экспорт STL (с основанием)",
     exportZip: "Экспорт ZIP (batch)",
+    fitBaseToEmblem: "Автоподгонка основания под эмблему",
+    fitEmblemToBase: "Автоподгонка эмблемы под основание",
+    undo: "Отменить",
+    redo: "Повторить",
     flatView: "Плоский вид",
     perspectiveView: "3D вид",
     statusIdle: "Загрузите SVG для начала.",
@@ -146,6 +173,9 @@ function applyLocale() {
   document.getElementById("langLabel").textContent = t("language");
   document.getElementById("svgFileLabel").textContent = t("svgFile");
   document.getElementById("baseStlLabel").textContent = t("baseStl");
+  document.getElementById("generateBaseLabel").textContent = t("generateBase");
+  document.getElementById("baseDiameterLabel").textContent = t("baseDiameter");
+  document.getElementById("baseThicknessLabel").textContent = t("baseThickness");
   document.getElementById("sizeLabel").textContent = t("size");
   document.getElementById("thicknessLabel").textContent = t("thickness");
   document.getElementById("liftLabel").textContent = t("lift");
@@ -156,6 +186,10 @@ function applyLocale() {
   document.getElementById("exportBtn").textContent = t("export");
   document.getElementById("exportCombinedBtn").textContent = t("exportCombined");
   document.getElementById("exportZipBtn").textContent = t("exportZip");
+  document.getElementById("fitBaseToEmblemBtn").textContent = t("fitBaseToEmblem");
+  document.getElementById("fitEmblemToBaseBtn").textContent = t("fitEmblemToBase");
+  document.getElementById("undoBtn").textContent = t("undo");
+  document.getElementById("redoBtn").textContent = t("redo");
   document.getElementById("flatViewBtn").textContent = isFlatView ? t("perspectiveView") : t("flatView");
   document.getElementById("licenseNote").textContent = t("license");
   if (!svgText) {
@@ -200,28 +234,141 @@ function setFlatView(enabled) {
   flatViewBtn.textContent = enabled ? t("perspectiveView") : t("flatView");
 }
 
-function composePreview() {
-  if (currentMesh) {
-    scene.remove(currentMesh);
+function makeGeneratedBaseMesh() {
+  const diameter = Number(baseDiameterInput.value);
+  const thickness = Number(baseThicknessInput.value);
+  const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, 96);
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, 0, thickness / 2);
+  geometry.computeVertexNormals();
+  return new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color: 0x8b8b8b,
+      metalness: 0.25,
+      roughness: 0.75,
+      transparent: true,
+      opacity: 0.95,
+    })
+  );
+}
+
+function getActiveBaseMesh() {
+  if (generateBaseInput.checked) {
+    return makeGeneratedBaseMesh();
   }
+  if (uploadedBaseMesh) {
+    return uploadedBaseMesh.clone();
+  }
+  return null;
+}
+
+function composePreview() {
+  if (currentMesh) scene.remove(currentMesh);
   if (currentBaseMesh) {
     scene.remove(currentBaseMesh);
+    currentBaseMesh.geometry.dispose();
+    currentBaseMesh.material.dispose();
+    currentBaseMesh = null;
   }
   if (!currentMesh) {
     exportCombinedBtn.disabled = true;
     return;
   }
-  if (currentBaseMesh) {
-    const baseBox = new THREE.Box3().setFromObject(currentBaseMesh);
+
+  const base = getActiveBaseMesh();
+  if (base) {
+    currentBaseMesh = base;
+    const baseBox = new THREE.Box3().setFromObject(base);
     const modelBox = new THREE.Box3().setFromObject(currentMesh);
     const lift = Number(liftInput.value);
+    currentMesh.position.set(0, 0, 0);
     currentMesh.position.z += baseBox.max.z - modelBox.min.z + lift;
-    scene.add(currentBaseMesh);
+    scene.add(base);
     exportCombinedBtn.disabled = false;
   } else {
+    currentMesh.position.set(0, 0, 0);
     exportCombinedBtn.disabled = true;
   }
   scene.add(currentMesh);
+}
+
+function captureState() {
+  return {
+    lang: currentLang,
+    theme: document.body.dataset.theme || "dark",
+    size: sizeInput.value,
+    thickness: thicknessInput.value,
+    lift: liftInput.value,
+    density: densityInput.value,
+    autoFix: autoFixInput.checked,
+    flipX: flipXInput.checked,
+    flipY: flipYInput.checked,
+    generateBase: generateBaseInput.checked,
+    baseDiameter: baseDiameterInput.value,
+    baseThickness: baseThicknessInput.value,
+    flatView: isFlatView,
+    svgText,
+    svgName,
+  };
+}
+
+function applyState(state) {
+  isApplyingHistory = true;
+  currentLang = state.lang ?? currentLang;
+  langSelect.value = currentLang;
+  themeSelect.value = state.theme ?? "dark";
+  sizeInput.value = state.size ?? sizeInput.value;
+  thicknessInput.value = state.thickness ?? thicknessInput.value;
+  liftInput.value = state.lift ?? liftInput.value;
+  densityInput.value = state.density ?? densityInput.value;
+  autoFixInput.checked = !!state.autoFix;
+  flipXInput.checked = !!state.flipX;
+  flipYInput.checked = !!state.flipY;
+  generateBaseInput.checked = !!state.generateBase;
+  baseDiameterInput.value = state.baseDiameter ?? baseDiameterInput.value;
+  baseThicknessInput.value = state.baseThickness ?? baseThicknessInput.value;
+  svgText = state.svgText ?? svgText;
+  svgName = state.svgName ?? svgName;
+  applyTheme(themeSelect.value);
+  applyLocale();
+  setFlatView(!!state.flatView);
+  rebuild();
+  isApplyingHistory = false;
+}
+
+function saveToCache() {
+  localStorage.setItem("sealGeneratorStateV1", JSON.stringify(captureState()));
+}
+
+function loadFromCache() {
+  const raw = localStorage.getItem("sealGeneratorStateV1");
+  if (!raw) return;
+  try {
+    const state = JSON.parse(raw);
+    applyState(state);
+  } catch (_err) {}
+}
+
+function commitHistory() {
+  if (isApplyingHistory) return;
+  const snapshot = captureState();
+  history = history.slice(0, historyIndex + 1);
+  history.push(snapshot);
+  if (history.length > 80) history.shift();
+  historyIndex = history.length - 1;
+  undoBtn.disabled = historyIndex <= 0;
+  redoBtn.disabled = true;
+  saveToCache();
+}
+
+function goHistory(delta) {
+  const next = historyIndex + delta;
+  if (next < 0 || next >= history.length) return;
+  historyIndex = next;
+  applyState(history[historyIndex]);
+  undoBtn.disabled = historyIndex <= 0;
+  redoBtn.disabled = historyIndex >= history.length - 1;
 }
 
 function resize() {
@@ -335,6 +482,8 @@ function refreshOutputs() {
   sizeValueInput.value = `${Number(sizeInput.value).toFixed(0)}`;
   thicknessValueInput.value = `${Number(thicknessInput.value).toFixed(1)}`;
   liftValueInput.value = `${Number(liftInput.value).toFixed(1)}`;
+  baseDiameterValueInput.value = `${Number(baseDiameterInput.value).toFixed(0)}`;
+  baseThicknessValueInput.value = `${Number(baseThicknessInput.value).toFixed(1)}`;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
 
@@ -370,7 +519,7 @@ function rebuild() {
     setStatus(
       [
         `${t("statusFile")}: ${svgName}`,
-        `${t("statusBase")}: ${currentBaseMesh ? t("on") : t("off")}`,
+        `${t("statusBase")}: ${generateBaseInput.checked || uploadedBaseMesh ? t("on") : t("off")}`,
         `${t("statusBatch")}: ${uploadedFiles.length}`,
         `${t("statusShapes")}: ${shapeCount}`,
         `${t("statusSize")}: ${bbox.x.toFixed(2)} x ${bbox.y.toFixed(2)} x ${bbox.z.toFixed(2)} mm`,
@@ -395,18 +544,19 @@ fileInput.addEventListener("change", async (e) => {
   svgName = first.name.replace(/\.svg$/i, "");
   svgText = await first.text();
   rebuild();
+  commitHistory();
 });
 
 baseStlFileInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) {
-    if (currentBaseMesh) {
-      scene.remove(currentBaseMesh);
-      currentBaseMesh.geometry.dispose();
-      currentBaseMesh.material.dispose();
-      currentBaseMesh = null;
-      composePreview();
+    if (uploadedBaseMesh) {
+      uploadedBaseMesh.geometry.dispose();
+      uploadedBaseMesh.material.dispose();
+      uploadedBaseMesh = null;
     }
+    composePreview();
+    rebuild();
     return;
   }
 
@@ -420,13 +570,12 @@ baseStlFileInput.addEventListener("change", async (e) => {
   geometry.translate(-center.x, -center.y, -box.min.z);
   geometry.computeVertexNormals();
 
-  if (currentBaseMesh) {
-    scene.remove(currentBaseMesh);
-    currentBaseMesh.geometry.dispose();
-    currentBaseMesh.material.dispose();
+  if (uploadedBaseMesh) {
+    uploadedBaseMesh.geometry.dispose();
+    uploadedBaseMesh.material.dispose();
   }
 
-  currentBaseMesh = new THREE.Mesh(
+  uploadedBaseMesh = new THREE.Mesh(
     geometry,
     new THREE.MeshStandardMaterial({
       color: 0x8b8b8b,
@@ -436,13 +585,24 @@ baseStlFileInput.addEventListener("change", async (e) => {
       opacity: 0.95,
     })
   );
-  composePreview();
   rebuild();
+  commitHistory();
 });
 
 for (const input of [sizeInput, thicknessInput, liftInput, densityInput, autoFixInput, flipYInput, flipXInput]) {
   input.addEventListener("input", rebuild);
-  input.addEventListener("change", rebuild);
+  input.addEventListener("change", () => {
+    rebuild();
+    commitHistory();
+  });
+}
+
+for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput]) {
+  input.addEventListener("input", rebuild);
+  input.addEventListener("change", () => {
+    rebuild();
+    commitHistory();
+  });
 }
 
 sizeValueInput.addEventListener("input", () => {
@@ -450,24 +610,43 @@ sizeValueInput.addEventListener("input", () => {
   sizeInput.value = `${value}`;
   rebuild();
 });
+sizeValueInput.addEventListener("change", commitHistory);
 
 thicknessValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(thicknessValueInput.value || thicknessInput.value), 0.5, 20);
   thicknessInput.value = `${value}`;
   rebuild();
 });
+thicknessValueInput.addEventListener("change", commitHistory);
 
 liftValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(liftValueInput.value || liftInput.value), 0, 5);
   liftInput.value = `${value}`;
   rebuild();
 });
+liftValueInput.addEventListener("change", commitHistory);
+
+baseDiameterValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(baseDiameterValueInput.value || baseDiameterInput.value), 10, 200);
+  baseDiameterInput.value = `${value}`;
+  rebuild();
+});
+baseDiameterValueInput.addEventListener("change", commitHistory);
+
+baseThicknessValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(baseThicknessValueInput.value || baseThicknessInput.value), 0.5, 20);
+  baseThicknessInput.value = `${value}`;
+  rebuild();
+});
+baseThicknessValueInput.addEventListener("change", commitHistory);
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
 langSelect.addEventListener("change", () => {
   currentLang = langSelect.value;
   applyLocale();
+  commitHistory();
 });
+themeSelect.addEventListener("change", commitHistory);
 
 exportBtn.addEventListener("click", () => {
   if (!currentMesh) {
@@ -485,13 +664,19 @@ exportBtn.addEventListener("click", () => {
 });
 
 exportCombinedBtn.addEventListener("click", () => {
-  if (!currentMesh || !currentBaseMesh) {
+  if (!currentMesh) {
     return;
   }
+  const activeBase = getActiveBaseMesh();
+  if (!activeBase) return;
+  const baseBox = new THREE.Box3().setFromObject(activeBase);
+  const model = currentMesh.clone();
+  const modelBox = new THREE.Box3().setFromObject(model);
+  model.position.z += baseBox.max.z - modelBox.min.z + Number(liftInput.value);
   const exporter = new STLExporter();
   const combined = new THREE.Group();
-  combined.add(currentBaseMesh.clone());
-  combined.add(currentMesh.clone());
+  combined.add(activeBase);
+  combined.add(model);
   const stl = exporter.parse(combined, { binary: false });
   const blob = new Blob([stl], { type: "model/stl" });
   const url = URL.createObjectURL(blob);
@@ -555,6 +740,46 @@ exportZipBtn.addEventListener("click", async () => {
 
 flatViewBtn.addEventListener("click", () => {
   setFlatView(!isFlatView);
+  commitHistory();
+});
+
+fitBaseToEmblemBtn.addEventListener("click", () => {
+  if (!currentMesh) return;
+  const box = new THREE.Box3().setFromObject(currentMesh);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const targetDiameter = clampNumber(Math.ceil(Math.max(size.x, size.y) * 1.1), 10, 200);
+  baseDiameterInput.value = `${targetDiameter}`;
+  baseThicknessInput.value = `${clampNumber(Number(thicknessInput.value), 0.5, 20)}`;
+  generateBaseInput.checked = true;
+  rebuild();
+  commitHistory();
+});
+
+fitEmblemToBaseBtn.addEventListener("click", () => {
+  let diameter = Number(baseDiameterInput.value);
+  if (!generateBaseInput.checked && uploadedBaseMesh) {
+    const box = new THREE.Box3().setFromObject(uploadedBaseMesh);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    diameter = Math.max(size.x, size.y);
+  }
+  sizeInput.value = `${clampNumber(Math.floor(diameter * 0.9), 10, 200)}`;
+  rebuild();
+  commitHistory();
+});
+
+undoBtn.addEventListener("click", () => goHistory(-1));
+redoBtn.addEventListener("click", () => goHistory(1));
+
+window.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.key.toLowerCase() === "z" && !e.shiftKey) {
+    e.preventDefault();
+    goHistory(-1);
+  } else if ((e.ctrlKey && e.key.toLowerCase() === "y") || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z")) {
+    e.preventDefault();
+    goHistory(1);
+  }
 });
 
 function animate() {
@@ -567,3 +792,5 @@ animate();
 refreshOutputs();
 applyTheme("dark");
 applyLocale();
+loadFromCache();
+commitHistory();
