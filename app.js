@@ -334,6 +334,29 @@ function ensureIndexedGeometry(geometry) {
   return g;
 }
 
+function geometrySignature(geometry) {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const p = geometry.attributes?.position;
+  return {
+    verts: p?.count || 0,
+    min: box ? [box.min.x, box.min.y, box.min.z].map((v) => Number(v.toFixed(5))) : [0, 0, 0],
+    max: box ? [box.max.x, box.max.y, box.max.z].map((v) => Number(v.toFixed(5))) : [0, 0, 0],
+  };
+}
+
+function sameSignature(a, b) {
+  return (
+    a.verts === b.verts &&
+    a.min[0] === b.min[0] &&
+    a.min[1] === b.min[1] &&
+    a.min[2] === b.min[2] &&
+    a.max[0] === b.max[0] &&
+    a.max[1] === b.max[1] &&
+    a.max[2] === b.max[2]
+  );
+}
+
 function updateSelectedObjectUI() {
   const isBase = selectedObjectType === "base";
   baseOffsetGroup.style.display = isBase ? "block" : "none";
@@ -577,6 +600,7 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   if (cutWorldBase.index) cutWorldBase = cutWorldBase.toNonIndexed();
   baseWorld = ensureIndexedGeometry(mergeVertices(baseWorld, 1e-5));
   cutWorldBase = ensureIndexedGeometry(mergeVertices(cutWorldBase, 1e-5));
+  const baseSig = geometrySignature(baseWorld);
   dlog("inverse.export.normalized", {
     baseVerts: baseWorld.attributes?.position?.count || 0,
     cutVerts: cutWorldBase.attributes?.position?.count || 0,
@@ -596,12 +620,15 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
     cutBrush.updateMatrixWorld(true);
     const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
     const vertCount = subtracted?.geometry?.attributes?.position?.count || 0;
+    const resultSig = vertCount ? geometrySignature(subtracted.geometry) : null;
     dlog("inverse.export.attempt.result", {
       extraDepth,
       vertCount,
+      unchanged: resultSig ? sameSignature(baseSig, resultSig) : null,
       resultBox: vertCount ? boxInfo(subtracted) : null,
     });
     if (vertCount === 0) return null;
+    if (resultSig && sameSignature(baseSig, resultSig)) return null;
     subtracted.material = baseMesh.material.clone();
     return subtracted;
   };
@@ -622,8 +649,12 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
     const cutClone = emblemMesh.clone();
     const bspResult = CSG.subtract(baseClone, cutClone);
     const vertCount = bspResult?.geometry?.attributes?.position?.count || 0;
-    dlog("inverse.export.fallback.bsp", { vertCount });
-    if (vertCount > 0) {
+    const resultSig = vertCount ? geometrySignature(bspResult.geometry) : null;
+    dlog("inverse.export.fallback.bsp", {
+      vertCount,
+      unchanged: resultSig ? sameSignature(baseSig, resultSig) : null,
+    });
+    if (vertCount > 0 && !(resultSig && sameSignature(baseSig, resultSig))) {
       bspResult.material = baseMesh.material.clone();
       dlog("inverse.export.end", { success: true, method: "three-csg-ts" });
       return bspResult;
