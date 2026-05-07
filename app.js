@@ -721,6 +721,19 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   return null;
 }
 
+function cloneMeshInWorldSpace(mesh) {
+  if (!mesh?.geometry || !mesh?.material) return null;
+  mesh.updateMatrixWorld(true);
+  const worldGeom = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+  worldGeom.computeVertexNormals();
+  const cloned = new THREE.Mesh(worldGeom, mesh.material.clone());
+  cloned.position.set(0, 0, 0);
+  cloned.rotation.set(0, 0, 0);
+  cloned.scale.set(1, 1, 1);
+  cloned.updateMatrixWorld(true);
+  return cloned;
+}
+
 function composePreview() {
   if (currentMesh) scene.remove(currentMesh);
   if (currentInversePreviewMesh) {
@@ -1372,7 +1385,7 @@ exportCombinedBtn.addEventListener("click", () => {
   if (!currentMesh) {
     return;
   }
-  const activeBase = getActiveBaseMesh();
+  const activeBase = currentBaseMesh ? cloneMeshInWorldSpace(currentBaseMesh) : getActiveBaseMesh();
   if (!activeBase) return;
   dlog("export.combined.click", {
     hasMesh: !!currentMesh,
@@ -1385,15 +1398,18 @@ exportCombinedBtn.addEventListener("click", () => {
     lift: liftInput.value,
     inset: insetInput.value,
   });
-  activeBase.position.set(
-    Number(baseOffsetXInput.value),
-    Number(baseOffsetYInput.value),
-    Number(baseOffsetZInput.value)
-  );
-  const model = currentMesh.clone();
-  placeEmblem(activeBase, model);
+  const model = cloneMeshInWorldSpace(currentMesh) || currentMesh.clone();
+  if (!currentBaseMesh) {
+    activeBase.position.set(
+      Number(baseOffsetXInput.value),
+      Number(baseOffsetYInput.value),
+      Number(baseOffsetZInput.value)
+    );
+    placeEmblem(activeBase, model);
+  }
   // In inverse mode export exactly what preview already shows.
-  let result = inverseModeInput.checked && currentInversePreviewMesh ? currentInversePreviewMesh.clone() : null;
+  let result =
+    inverseModeInput.checked && currentInversePreviewMesh ? cloneMeshInWorldSpace(currentInversePreviewMesh) : null;
   if (!result) result = buildCombinedMeshForExport(activeBase, model);
   if (!result) {
     dlog("export.combined.failed", {});
