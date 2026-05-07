@@ -38,10 +38,14 @@ const gizmoTargetInput = document.getElementById("gizmoTarget");
 const gizmoModeBtn = document.getElementById("gizmoModeBtn");
 const baseOffsetXInput = document.getElementById("baseOffsetX");
 const baseOffsetXValueInput = document.getElementById("baseOffsetXValue");
+const baseOffsetYInput = document.getElementById("baseOffsetY");
+const baseOffsetYValueInput = document.getElementById("baseOffsetYValue");
 const baseOffsetZInput = document.getElementById("baseOffsetZ");
 const baseOffsetZValueInput = document.getElementById("baseOffsetZValue");
 const emblemOffsetXInput = document.getElementById("emblemOffsetX");
 const emblemOffsetXValueInput = document.getElementById("emblemOffsetXValue");
+const emblemOffsetYInput = document.getElementById("emblemOffsetY");
+const emblemOffsetYValueInput = document.getElementById("emblemOffsetYValue");
 const emblemOffsetZInput = document.getElementById("emblemOffsetZ");
 const emblemOffsetZValueInput = document.getElementById("emblemOffsetZValue");
 const exportBtn = document.getElementById("exportBtn");
@@ -96,8 +100,10 @@ const i18n = {
     gizmoRotate: "Rotate",
     gizmoScale: "Scale",
     baseOffsetX: "Base offset X (mm)",
+    baseOffsetY: "Base offset Y (mm)",
     baseOffsetZ: "Base offset Z (mm)",
     emblemOffsetX: "Emblem offset X (mm)",
+    emblemOffsetY: "Emblem offset Y (mm)",
     emblemOffsetZ: "Emblem offset Z (mm)",
     density: "Line density",
     autoFix: "Auto-fix unclosed faces",
@@ -154,8 +160,10 @@ const i18n = {
     gizmoRotate: "Поворот",
     gizmoScale: "Масштаб",
     baseOffsetX: "Смещение основания X (мм)",
+    baseOffsetY: "Смещение основания Y (мм)",
     baseOffsetZ: "Смещение основания Z (мм)",
     emblemOffsetX: "Смещение эмблемы X (мм)",
+    emblemOffsetY: "Смещение эмблемы Y (мм)",
     emblemOffsetZ: "Смещение эмблемы Z (мм)",
     density: "Плотность линий",
     autoFix: "Автоисправление незамкнутых контуров",
@@ -194,7 +202,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0c10);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
-camera.position.set(80, 80, 120);
+camera.up.set(0, 0, 1);
+camera.position.set(120, -120, 80);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -232,9 +241,11 @@ transformControls.addEventListener("objectChange", () => {
   if (!obj) return;
   if (obj === currentBaseMesh) {
     baseOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
+    baseOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
     baseOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
   } else if (obj === currentMesh) {
     emblemOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
+    emblemOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
     emblemOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
   }
   refreshOutputs();
@@ -247,6 +258,7 @@ keyLight.position.set(100, 160, 120);
 scene.add(keyLight);
 
 let grid = new THREE.GridHelper(400, 40, 0x3d444d, 0x2d333b);
+grid.rotateX(Math.PI / 2);
 scene.add(grid);
 
 function setStatus(text) {
@@ -277,8 +289,10 @@ function applyLocale() {
   document.getElementById("liftLabel").textContent = t("lift");
   document.getElementById("insetLabel").textContent = t("inset");
   document.getElementById("baseOffsetXLabel").textContent = t("baseOffsetX");
+  document.getElementById("baseOffsetYLabel").textContent = t("baseOffsetY");
   document.getElementById("baseOffsetZLabel").textContent = t("baseOffsetZ");
   document.getElementById("emblemOffsetXLabel").textContent = t("emblemOffsetX");
+  document.getElementById("emblemOffsetYLabel").textContent = t("emblemOffsetY");
   document.getElementById("emblemOffsetZLabel").textContent = t("emblemOffsetZ");
   document.getElementById("densityLabel").textContent = t("density");
   document.getElementById("autoFixLabel").textContent = t("autoFix");
@@ -322,6 +336,7 @@ function applyTheme(theme) {
     isLight ? 0xbdae8a : 0x3d444d,
     isLight ? 0xd2c6a7 : 0x2d333b
   );
+  grid.rotateX(Math.PI / 2);
   scene.add(grid);
 }
 
@@ -329,11 +344,12 @@ function setFlatView(enabled) {
   isFlatView = enabled;
   controls.enableRotate = !enabled;
   if (enabled) {
-    camera.position.set(0, 220, 0);
+    camera.position.set(0, 0, 220);
     camera.up.set(0, 1, 0);
     controls.target.set(0, 0, 0);
   } else {
-    camera.position.set(80, 80, 120);
+    camera.position.set(120, -120, 80);
+    camera.up.set(0, 0, 1);
     controls.target.set(0, 0, 0);
   }
   controls.update();
@@ -381,8 +397,9 @@ function makeGeneratedBaseMesh() {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
   const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, 96);
-  // Y is up in this scene, keep top at Y=0.
-  geometry.translate(0, -thickness / 2, 0);
+  // Z is up in this scene, keep top at Z=0.
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, 0, -thickness / 2);
   geometry.computeVertexNormals();
   return new THREE.Mesh(
     geometry,
@@ -437,12 +454,13 @@ function placeEmblem(baseMesh, emblemMesh) {
   const emblemBox = new THREE.Box3().setFromObject(emblemMesh);
   if (baseBox) {
     if (inverse) {
-      emblemMesh.position.y = baseBox.max.y - inset - emblemBox.max.y;
+      emblemMesh.position.z = baseBox.max.z - inset - emblemBox.max.z;
     } else {
-      emblemMesh.position.y = baseBox.max.y + lift - emblemBox.min.y;
+      emblemMesh.position.z = baseBox.max.z + lift - emblemBox.min.z;
     }
   }
   emblemMesh.position.x += Number(emblemOffsetXInput.value);
+  emblemMesh.position.y += Number(emblemOffsetYInput.value);
   emblemMesh.position.z += Number(emblemOffsetZInput.value);
 }
 
@@ -481,7 +499,11 @@ function composePreview() {
   const base = getActiveBaseMesh();
   if (base) {
     currentBaseMesh = base;
-    currentBaseMesh.position.set(Number(baseOffsetXInput.value), 0, Number(baseOffsetZInput.value));
+    currentBaseMesh.position.set(
+      Number(baseOffsetXInput.value),
+      Number(baseOffsetYInput.value),
+      Number(baseOffsetZInput.value)
+    );
     placeEmblem(currentBaseMesh, currentMesh);
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
@@ -515,6 +537,7 @@ function composePreview() {
     currentMesh.material.emissiveIntensity = 0.0;
     currentMesh.position.set(0, 0, 0);
     currentMesh.position.x += Number(emblemOffsetXInput.value);
+    currentMesh.position.y += Number(emblemOffsetYInput.value);
     currentMesh.position.z += Number(emblemOffsetZInput.value);
     exportCombinedBtn.disabled = true;
   }
@@ -542,8 +565,10 @@ function captureState() {
     gizmoTarget: gizmoTargetInput.value,
     gizmoMode: gizmoModes[gizmoModeIndex],
     baseOffsetX: baseOffsetXInput.value,
+    baseOffsetY: baseOffsetYInput.value,
     baseOffsetZ: baseOffsetZInput.value,
     emblemOffsetX: emblemOffsetXInput.value,
+    emblemOffsetY: emblemOffsetYInput.value,
     emblemOffsetZ: emblemOffsetZInput.value,
     generateBase: generateBaseInput.checked,
     baseDiameter: baseDiameterInput.value,
@@ -574,8 +599,10 @@ function applyState(state) {
   gizmoTargetInput.value = state.gizmoTarget ?? "emblem";
   setGizmoMode(state.gizmoMode ?? "translate");
   baseOffsetXInput.value = state.baseOffsetX ?? baseOffsetXInput.value;
+  baseOffsetYInput.value = state.baseOffsetY ?? baseOffsetYInput.value;
   baseOffsetZInput.value = state.baseOffsetZ ?? baseOffsetZInput.value;
   emblemOffsetXInput.value = state.emblemOffsetX ?? emblemOffsetXInput.value;
+  emblemOffsetYInput.value = state.emblemOffsetY ?? emblemOffsetYInput.value;
   emblemOffsetZInput.value = state.emblemOffsetZ ?? emblemOffsetZInput.value;
   generateBaseInput.checked = !!state.generateBase;
   baseDiameterInput.value = state.baseDiameter ?? baseDiameterInput.value;
@@ -706,9 +733,8 @@ function buildMesh(svg, opts) {
   const box2 = merged.boundingBox;
   const center = new THREE.Vector3();
   box2.getCenter(center);
-  merged.translate(-center.x, -box2.min.y, -center.z);
-  // Lay emblem flat on XZ plane (Y-up world).
-  merged.rotateX(-Math.PI / 2);
+  // Keep emblem on Z=0 plane in Z-up world.
+  merged.translate(-center.x, -center.y, -box2.min.z);
 
   applyMirror(merged, opts.flipX, opts.flipY);
   merged.computeVertexNormals();
@@ -741,8 +767,10 @@ function refreshOutputs() {
   baseDiameterValueInput.value = `${Number(baseDiameterInput.value).toFixed(0)}`;
   baseThicknessValueInput.value = `${Number(baseThicknessInput.value).toFixed(1)}`;
   baseOffsetXValueInput.value = `${Number(baseOffsetXInput.value).toFixed(1)}`;
+  baseOffsetYValueInput.value = `${Number(baseOffsetYInput.value).toFixed(1)}`;
   baseOffsetZValueInput.value = `${Number(baseOffsetZInput.value).toFixed(1)}`;
   emblemOffsetXValueInput.value = `${Number(emblemOffsetXInput.value).toFixed(1)}`;
+  emblemOffsetYValueInput.value = `${Number(emblemOffsetYInput.value).toFixed(1)}`;
   emblemOffsetZValueInput.value = `${Number(emblemOffsetZInput.value).toFixed(1)}`;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
@@ -828,8 +856,8 @@ baseStlFileInput.addEventListener("change", async (e) => {
   const box = geometry.boundingBox;
   const center = new THREE.Vector3();
   box.getCenter(center);
-  // Keep uploaded base top face at Y=0.
-  geometry.translate(-center.x, -box.max.y, -center.z);
+  // Keep uploaded base top face at Z=0.
+  geometry.translate(-center.x, -center.y, -box.max.z);
   geometry.computeVertexNormals();
 
   if (uploadedBaseMesh) {
@@ -851,7 +879,7 @@ baseStlFileInput.addEventListener("change", async (e) => {
   commitHistory();
 });
 
-for (const input of [sizeInput, thicknessInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetZInput, wireframeModeInput, gizmoEnabledInput]) {
+for (const input of [sizeInput, thicknessInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetYInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetYInput, emblemOffsetZInput, wireframeModeInput, gizmoEnabledInput]) {
   input.addEventListener("input", rebuild);
   input.addEventListener("change", () => {
     rebuild();
@@ -916,6 +944,13 @@ baseOffsetXValueInput.addEventListener("input", () => {
 });
 baseOffsetXValueInput.addEventListener("change", commitHistory);
 
+baseOffsetYValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(baseOffsetYValueInput.value || baseOffsetYInput.value), -100, 100);
+  baseOffsetYInput.value = `${value}`;
+  rebuild();
+});
+baseOffsetYValueInput.addEventListener("change", commitHistory);
+
 baseOffsetZValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(baseOffsetZValueInput.value || baseOffsetZInput.value), -100, 100);
   baseOffsetZInput.value = `${value}`;
@@ -929,6 +964,13 @@ emblemOffsetXValueInput.addEventListener("input", () => {
   rebuild();
 });
 emblemOffsetXValueInput.addEventListener("change", commitHistory);
+
+emblemOffsetYValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(emblemOffsetYValueInput.value || emblemOffsetYInput.value), -100, 100);
+  emblemOffsetYInput.value = `${value}`;
+  rebuild();
+});
+emblemOffsetYValueInput.addEventListener("change", commitHistory);
 
 emblemOffsetZValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(emblemOffsetZValueInput.value || emblemOffsetZInput.value), -100, 100);
@@ -979,7 +1021,11 @@ exportCombinedBtn.addEventListener("click", () => {
   }
   const activeBase = getActiveBaseMesh();
   if (!activeBase) return;
-  activeBase.position.set(Number(baseOffsetXInput.value), 0, Number(baseOffsetZInput.value));
+  activeBase.position.set(
+    Number(baseOffsetXInput.value),
+    Number(baseOffsetYInput.value),
+    Number(baseOffsetZInput.value)
+  );
   const model = currentMesh.clone();
   placeEmblem(activeBase, model);
   const result = buildCombinedMeshForExport(activeBase, model);
@@ -1055,7 +1101,7 @@ fitBaseToEmblemBtn.addEventListener("click", () => {
   const box = new THREE.Box3().setFromObject(currentMesh);
   const size = new THREE.Vector3();
   box.getSize(size);
-  const targetDiameter = clampNumber(Math.ceil(Math.max(size.x, size.z) * 1.1), 10, 200);
+  const targetDiameter = clampNumber(Math.ceil(Math.max(size.x, size.y) * 1.1), 10, 200);
   baseDiameterInput.value = `${targetDiameter}`;
   baseThicknessInput.value = `${clampNumber(Number(thicknessInput.value), 0.5, 20)}`;
   generateBaseInput.checked = true;
@@ -1069,7 +1115,7 @@ fitEmblemToBaseBtn.addEventListener("click", () => {
     const box = new THREE.Box3().setFromObject(uploadedBaseMesh);
     const size = new THREE.Vector3();
     box.getSize(size);
-    diameter = Math.max(size.x, size.z);
+    diameter = Math.max(size.x, size.y);
   }
   sizeInput.value = `${clampNumber(Math.floor(diameter * 0.9), 10, 200)}`;
   rebuild();
