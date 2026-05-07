@@ -1,3 +1,6 @@
 *.stl
 wh40k/
+!wh40k/
+wh40k/*
+!wh40k/library-manifest.json
 __pycache__/

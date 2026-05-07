@@ -75,6 +75,11 @@ const batchWindowContent = document.getElementById("batchWindowContent");
 const batchSvgFilesInput = document.getElementById("batchSvgFiles");
 const batchInverseModeInput = document.getElementById("batchInverseMode");
 const batchExportBtn = document.getElementById("batchExportBtn");
+const libraryCategoryInput = document.getElementById("libraryCategory");
+const librarySingleInput = document.getElementById("librarySingle");
+const libraryLoadSingleBtn = document.getElementById("libraryLoadSingleBtn");
+const batchLibraryListInput = document.getElementById("batchLibraryList");
+const batchAddLibraryBtn = document.getElementById("batchAddLibraryBtn");
 
 const densityOut = document.getElementById("densityOut");
 
@@ -87,6 +92,7 @@ let uploadedBaseMesh = null;
 let currentLang = "en";
 let uploadedFiles = [];
 let batchFiles = [];
+let libraryManifest = [];
 let isFlatView = false;
 let history = [];
 let historyIndex = -1;
@@ -107,6 +113,11 @@ const i18n = {
     theme: "Theme",
     language: "Language",
     sidebarSide: "Sidebar",
+    libraryCategory: "Library category",
+    librarySingle: "Library SVG (single)",
+    loadFromLibrary: "Load from library",
+    batchLibrary: "Library SVG (multiple)",
+    batchAddLibrary: "Add selected from library",
     svgFile: "SVG file",
     baseStl: "Base STL (optional)",
     generateBase: "Generate round base",
@@ -181,6 +192,11 @@ const i18n = {
     theme: "Тема",
     language: "Язык",
     sidebarSide: "Сайдбар",
+    libraryCategory: "Категория библиотеки",
+    librarySingle: "SVG из библиотеки (один)",
+    loadFromLibrary: "Загрузить из библиотеки",
+    batchLibrary: "SVG из библиотеки (несколько)",
+    batchAddLibrary: "Добавить выбранные из библиотеки",
     svgFile: "SVG файл",
     baseStl: "Основание STL (опционально)",
     generateBase: "Сгенерировать круглое основание",
@@ -438,6 +454,53 @@ function t(key) {
   return i18n[currentLang][key];
 }
 
+function makeVirtualBatchFile(name, svgTextContent) {
+  return {
+    name,
+    text: async () => svgTextContent,
+  };
+}
+
+function updateBatchButtonState() {
+  batchExportBtn.disabled = batchFiles.length === 0;
+}
+
+function updateLibraryItemLists() {
+  const category = libraryCategoryInput.value;
+  const filtered = libraryManifest.filter((item) => item.category === category);
+  librarySingleInput.innerHTML = "";
+  batchLibraryListInput.innerHTML = "";
+  for (const item of filtered) {
+    const optSingle = document.createElement("option");
+    optSingle.value = item.path;
+    optSingle.textContent = item.name;
+    librarySingleInput.appendChild(optSingle);
+    const optBatch = document.createElement("option");
+    optBatch.value = item.path;
+    optBatch.textContent = item.name;
+    batchLibraryListInput.appendChild(optBatch);
+  }
+}
+
+async function loadLibraryManifest() {
+  try {
+    const response = await fetch("./wh40k/library-manifest.json");
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!Array.isArray(data)) return;
+    libraryManifest = data;
+    const categories = [...new Set(libraryManifest.map((item) => item.category))].sort((a, b) => a.localeCompare(b));
+    libraryCategoryInput.innerHTML = "";
+    for (const category of categories) {
+      const opt = document.createElement("option");
+      opt.value = category;
+      opt.textContent = category;
+      libraryCategoryInput.appendChild(opt);
+    }
+    updateLibraryItemLists();
+  } catch (_err) {}
+}
+
 function applyLocale() {
   document.documentElement.lang = currentLang;
   document.getElementById("title").textContent = t("title");
@@ -445,6 +508,11 @@ function applyLocale() {
   document.getElementById("themeLabel").textContent = t("theme");
   document.getElementById("langLabel").textContent = t("language");
   document.getElementById("sidebarSideLabel").textContent = t("sidebarSide");
+  document.getElementById("libraryCategoryLabel").textContent = t("libraryCategory");
+  document.getElementById("librarySingleLabel").textContent = t("librarySingle");
+  document.getElementById("libraryLoadSingleBtn").textContent = t("loadFromLibrary");
+  document.getElementById("batchLibraryLabel").textContent = t("batchLibrary");
+  document.getElementById("batchAddLibraryBtn").textContent = t("batchAddLibrary");
   document.getElementById("modelSectionLabel").textContent = t("modelSection");
   document.getElementById("baseSectionLabel").textContent = t("baseSection");
   document.getElementById("batchSectionLabel").textContent = t("batchSection");
@@ -1535,11 +1603,49 @@ exportZipBtn.addEventListener("click", async () => {
 });
 
 batchSvgFilesInput.addEventListener("change", (e) => {
-  batchFiles = Array.from(e.target.files || []);
-  batchExportBtn.disabled = batchFiles.length === 0;
+  const incoming = Array.from(e.target.files || []);
+  batchFiles = [...batchFiles, ...incoming];
+  updateBatchButtonState();
 });
 
 batchExportBtn.addEventListener("click", () => exportZipBtn.click());
+
+libraryCategoryInput.addEventListener("change", updateLibraryItemLists);
+
+libraryLoadSingleBtn.addEventListener("click", async () => {
+  const selectedPath = librarySingleInput.value;
+  if (!selectedPath) return;
+  try {
+    const response = await fetch(selectedPath);
+    if (!response.ok) throw new Error("Failed to load library SVG");
+    const text = await response.text();
+    svgText = text;
+    svgName = selectedPath.split("/").pop().replace(/\.svg$/i, "");
+    rebuild();
+    commitHistory();
+  } catch (_err) {
+    setStatus(`${t("statusError")}: library svg load failed`);
+  }
+});
+
+batchAddLibraryBtn.addEventListener("click", async () => {
+  const selected = Array.from(batchLibraryListInput.selectedOptions || []);
+  if (selected.length === 0) return;
+  const added = [];
+  for (const option of selected) {
+    try {
+      const path = option.value;
+      const response = await fetch(path);
+      if (!response.ok) continue;
+      const text = await response.text();
+      const name = path.split("/").pop();
+      added.push(makeVirtualBatchFile(name, text));
+    } catch (_err) {}
+  }
+  batchFiles = [...batchFiles, ...added];
+  updateBatchButtonState();
+  setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
+});
 
 flatViewBtn.addEventListener("click", () => {
   setFlatView(!isFlatView);
@@ -1652,5 +1758,6 @@ setGizmoMode("translate");
 gizmoEnabledInput.checked = true;
 createFloatingWindows();
 applyLocale();
+loadLibraryManifest();
 loadFromCache();
 commitHistory();

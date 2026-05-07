@@ -82,6 +82,10 @@ select {
   font-size: 11px;
 }
 
+select[multiple] {
+  min-height: 140px;
+}
+
 .brand {
   display: grid;
   grid-template-columns: 32px 1fr;
