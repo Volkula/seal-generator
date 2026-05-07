@@ -1,24 +1,30 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
+const baseStlFileInput = document.getElementById("baseStlFile");
 const themeSelect = document.getElementById("themeSelect");
 const langSelect = document.getElementById("langSelect");
 const sizeInput = document.getElementById("size");
 const sizeValueInput = document.getElementById("sizeValue");
 const thicknessInput = document.getElementById("thickness");
 const thicknessValueInput = document.getElementById("thicknessValue");
+const liftInput = document.getElementById("lift");
+const liftValueInput = document.getElementById("liftValue");
 const densityInput = document.getElementById("density");
 const autoFixInput = document.getElementById("autoFix");
 const flipYInput = document.getElementById("flipY");
 const flipXInput = document.getElementById("flipX");
 const exportBtn = document.getElementById("exportBtn");
+const exportCombinedBtn = document.getElementById("exportCombinedBtn");
 const exportZipBtn = document.getElementById("exportZipBtn");
+const flatViewBtn = document.getElementById("flatViewBtn");
 const statusEl = document.getElementById("status");
 
 const densityOut = document.getElementById("densityOut");
@@ -26,8 +32,10 @@ const densityOut = document.getElementById("densityOut");
 let svgText = "";
 let svgName = "model";
 let currentMesh = null;
+let currentBaseMesh = null;
 let currentLang = "en";
 let uploadedFiles = [];
+let isFlatView = false;
 
 const i18n = {
   en: {
@@ -36,14 +44,19 @@ const i18n = {
     theme: "Theme",
     language: "Language",
     svgFile: "SVG file",
+    baseStl: "Base STL (optional)",
     size: "Size (max dimension, mm)",
     thickness: "Thickness (mm)",
+    lift: "Lift over base (mm)",
     density: "Line density",
     autoFix: "Auto-fix unclosed faces",
     flipY: "Flip vertically (top-bottom)",
     flipX: "Flip horizontally (left-right)",
     export: "Export STL",
+    exportCombined: "Export STL (with base)",
     exportZip: "Export ZIP (batch)",
+    flatView: "Flat View",
+    perspectiveView: "3D View",
     statusIdle: "Load an SVG to start.",
     statusError: "Error",
     statusFile: "File",
@@ -53,6 +66,7 @@ const i18n = {
     statusFlip: "Flip Y",
     statusFlipX: "Flip X",
     statusBatch: "Batch files",
+    statusBase: "Base loaded",
     on: "on",
     off: "off",
     license:
@@ -64,14 +78,19 @@ const i18n = {
     theme: "Тема",
     language: "Язык",
     svgFile: "SVG файл",
+    baseStl: "Основание STL (опционально)",
     size: "Размер (макс. габарит, мм)",
     thickness: "Толщина (мм)",
+    lift: "Подъем над основанием (мм)",
     density: "Плотность линий",
     autoFix: "Автоисправление незамкнутых контуров",
     flipY: "Отразить по вертикали (верх-низ)",
     flipX: "Отразить по горизонтали (лево-право)",
     export: "Экспорт STL",
+    exportCombined: "Экспорт STL (с основанием)",
     exportZip: "Экспорт ZIP (batch)",
+    flatView: "Плоский вид",
+    perspectiveView: "3D вид",
     statusIdle: "Загрузите SVG для начала.",
     statusError: "Ошибка",
     statusFile: "Файл",
@@ -81,6 +100,7 @@ const i18n = {
     statusFlip: "Флип Y",
     statusFlipX: "Флип X",
     statusBatch: "Файлов в batch",
+    statusBase: "Основание загружено",
     on: "вкл",
     off: "выкл",
     license:
@@ -125,14 +145,18 @@ function applyLocale() {
   document.getElementById("themeLabel").textContent = t("theme");
   document.getElementById("langLabel").textContent = t("language");
   document.getElementById("svgFileLabel").textContent = t("svgFile");
+  document.getElementById("baseStlLabel").textContent = t("baseStl");
   document.getElementById("sizeLabel").textContent = t("size");
   document.getElementById("thicknessLabel").textContent = t("thickness");
+  document.getElementById("liftLabel").textContent = t("lift");
   document.getElementById("densityLabel").textContent = t("density");
   document.getElementById("autoFixLabel").textContent = t("autoFix");
   document.getElementById("flipYLabel").textContent = t("flipY");
   document.getElementById("flipXLabel").textContent = t("flipX");
   document.getElementById("exportBtn").textContent = t("export");
+  document.getElementById("exportCombinedBtn").textContent = t("exportCombined");
   document.getElementById("exportZipBtn").textContent = t("exportZip");
+  document.getElementById("flatViewBtn").textContent = isFlatView ? t("perspectiveView") : t("flatView");
   document.getElementById("licenseNote").textContent = t("license");
   if (!svgText) {
     setStatus(t("statusIdle"));
@@ -159,6 +183,45 @@ function applyTheme(theme) {
     isLight ? 0xd2c6a7 : 0x2d333b
   );
   scene.add(grid);
+}
+
+function setFlatView(enabled) {
+  isFlatView = enabled;
+  controls.enableRotate = !enabled;
+  if (enabled) {
+    camera.position.set(0, 0, 220);
+    camera.up.set(0, 1, 0);
+    controls.target.set(0, 0, 0);
+  } else {
+    camera.position.set(80, 80, 120);
+    controls.target.set(0, 0, 0);
+  }
+  controls.update();
+  flatViewBtn.textContent = enabled ? t("perspectiveView") : t("flatView");
+}
+
+function composePreview() {
+  if (currentMesh) {
+    scene.remove(currentMesh);
+  }
+  if (currentBaseMesh) {
+    scene.remove(currentBaseMesh);
+  }
+  if (!currentMesh) {
+    exportCombinedBtn.disabled = true;
+    return;
+  }
+  if (currentBaseMesh) {
+    const baseBox = new THREE.Box3().setFromObject(currentBaseMesh);
+    const modelBox = new THREE.Box3().setFromObject(currentMesh);
+    const lift = Number(liftInput.value);
+    currentMesh.position.z += baseBox.max.z - modelBox.min.z + lift;
+    scene.add(currentBaseMesh);
+    exportCombinedBtn.disabled = false;
+  } else {
+    exportCombinedBtn.disabled = true;
+  }
+  scene.add(currentMesh);
 }
 
 function resize() {
@@ -271,6 +334,7 @@ function buildMesh(svg, opts) {
 function refreshOutputs() {
   sizeValueInput.value = `${Number(sizeInput.value).toFixed(0)}`;
   thicknessValueInput.value = `${Number(thicknessInput.value).toFixed(1)}`;
+  liftValueInput.value = `${Number(liftInput.value).toFixed(1)}`;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
 
@@ -296,17 +360,17 @@ function rebuild() {
   try {
     const { mesh, shapeCount, bbox } = buildMesh(svgText, opts);
     if (currentMesh) {
-      scene.remove(currentMesh);
       currentMesh.geometry.dispose();
       currentMesh.material.dispose();
     }
     currentMesh = mesh;
-    scene.add(currentMesh);
+    composePreview();
     exportBtn.disabled = false;
     exportZipBtn.disabled = uploadedFiles.length === 0;
     setStatus(
       [
         `${t("statusFile")}: ${svgName}`,
+        `${t("statusBase")}: ${currentBaseMesh ? t("on") : t("off")}`,
         `${t("statusBatch")}: ${uploadedFiles.length}`,
         `${t("statusShapes")}: ${shapeCount}`,
         `${t("statusSize")}: ${bbox.x.toFixed(2)} x ${bbox.y.toFixed(2)} x ${bbox.z.toFixed(2)} mm`,
@@ -333,7 +397,50 @@ fileInput.addEventListener("change", async (e) => {
   rebuild();
 });
 
-for (const input of [sizeInput, thicknessInput, densityInput, autoFixInput, flipYInput, flipXInput]) {
+baseStlFileInput.addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) {
+    if (currentBaseMesh) {
+      scene.remove(currentBaseMesh);
+      currentBaseMesh.geometry.dispose();
+      currentBaseMesh.material.dispose();
+      currentBaseMesh = null;
+      composePreview();
+    }
+    return;
+  }
+
+  const loader = new STLLoader();
+  const buffer = await file.arrayBuffer();
+  const geometry = loader.parse(buffer);
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  geometry.translate(-center.x, -center.y, -box.min.z);
+  geometry.computeVertexNormals();
+
+  if (currentBaseMesh) {
+    scene.remove(currentBaseMesh);
+    currentBaseMesh.geometry.dispose();
+    currentBaseMesh.material.dispose();
+  }
+
+  currentBaseMesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color: 0x8b8b8b,
+      metalness: 0.25,
+      roughness: 0.75,
+      transparent: true,
+      opacity: 0.95,
+    })
+  );
+  composePreview();
+  rebuild();
+});
+
+for (const input of [sizeInput, thicknessInput, liftInput, densityInput, autoFixInput, flipYInput, flipXInput]) {
   input.addEventListener("input", rebuild);
   input.addEventListener("change", rebuild);
 }
@@ -347,6 +454,12 @@ sizeValueInput.addEventListener("input", () => {
 thicknessValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(thicknessValueInput.value || thicknessInput.value), 0.5, 20);
   thicknessInput.value = `${value}`;
+  rebuild();
+});
+
+liftValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(liftValueInput.value || liftInput.value), 0, 5);
+  liftInput.value = `${value}`;
   rebuild();
 });
 
@@ -367,6 +480,24 @@ exportBtn.addEventListener("click", () => {
   const a = document.createElement("a");
   a.href = url;
   a.download = `${svgName || "model"}.stl`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+exportCombinedBtn.addEventListener("click", () => {
+  if (!currentMesh || !currentBaseMesh) {
+    return;
+  }
+  const exporter = new STLExporter();
+  const combined = new THREE.Group();
+  combined.add(currentBaseMesh.clone());
+  combined.add(currentMesh.clone());
+  const stl = exporter.parse(combined, { binary: false });
+  const blob = new Blob([stl], { type: "model/stl" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${svgName || "model"}_with_base.stl`;
   a.click();
   URL.revokeObjectURL(url);
 });
@@ -420,6 +551,10 @@ exportZipBtn.addEventListener("click", async () => {
   URL.revokeObjectURL(url);
 
   setStatus(`${t("statusBatch")}: ${uploadedFiles.length}\nConverted: ${success}`);
+});
+
+flatViewBtn.addEventListener("click", () => {
+  setFlatView(!isFlatView);
 });
 
 function animate() {
