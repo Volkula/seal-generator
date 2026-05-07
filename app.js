@@ -321,6 +321,18 @@ function boxInfo(meshOrGeom) {
   };
 }
 
+function ensureIndexedGeometry(geometry) {
+  let g = geometry.clone();
+  if (!g.index) {
+    const count = g.attributes?.position?.count || 0;
+    const index = new Uint32Array(count);
+    for (let i = 0; i < count; i += 1) index[i] = i;
+    g.setIndex(new THREE.BufferAttribute(index, 1));
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 function updateSelectedObjectUI() {
   const isBase = selectedObjectType === "base";
   baseOffsetGroup.style.display = isBase ? "block" : "none";
@@ -561,8 +573,8 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   let cutWorldBase = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
   if (baseWorld.index) baseWorld = baseWorld.toNonIndexed();
   if (cutWorldBase.index) cutWorldBase = cutWorldBase.toNonIndexed();
-  baseWorld = mergeVertices(baseWorld, 1e-5);
-  cutWorldBase = mergeVertices(cutWorldBase, 1e-5);
+  baseWorld = ensureIndexedGeometry(mergeVertices(baseWorld, 1e-5));
+  cutWorldBase = ensureIndexedGeometry(mergeVertices(cutWorldBase, 1e-5));
   dlog("inverse.export.normalized", {
     baseVerts: baseWorld.attributes?.position?.count || 0,
     cutVerts: cutWorldBase.attributes?.position?.count || 0,
