@@ -4,7 +4,7 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { Evaluator, Brush, SUBTRACTION } from "three-bvh-csg";
 
@@ -270,6 +270,10 @@ transformControls.addEventListener("objectChange", () => {
   }
   refreshOutputs();
 });
+transformControls.addEventListener("mouseUp", () => {
+  rebuild();
+  commitHistory();
+});
 scene.add(transformControls);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -508,8 +512,11 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   // True inverse: subtract emblem volume from base.
   baseMesh.updateMatrixWorld(true);
   emblemMesh.updateMatrixWorld(true);
-  const baseWorld = baseMesh.geometry.clone().applyMatrix4(baseMesh.matrixWorld);
-  const cutWorld = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
+  let baseWorld = baseMesh.geometry.clone().applyMatrix4(baseMesh.matrixWorld);
+  let cutWorld = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
+  // Normalize topology for more stable CSG on SVG extrusions.
+  baseWorld = mergeVertices(baseWorld.toNonIndexed(), 1e-5);
+  cutWorld = mergeVertices(cutWorld.toNonIndexed(), 1e-5);
   const baseBrush = new Brush(baseWorld);
   baseBrush.updateMatrixWorld(true);
   const cutBrush = new Brush(cutWorld);
