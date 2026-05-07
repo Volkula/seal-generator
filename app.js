@@ -96,6 +96,7 @@ const libraryPreviewCloseBtn = document.getElementById("libraryPreviewCloseBtn")
 const libraryHoverPreview = document.getElementById("libraryHoverPreview");
 const libraryHoverPreviewImg = document.getElementById("libraryHoverPreviewImg");
 const libraryHoverPreviewName = document.getElementById("libraryHoverPreviewName");
+const libraryHoverDelayInput = document.getElementById("libraryHoverDelay");
 
 const densityOut = document.getElementById("densityOut");
 
@@ -140,6 +141,7 @@ const i18n = {
     libraryBrowserCategory: "Library Category",
     libraryBrowserLoad: "Load selected",
     libraryBrowserAdd: "Add to batch",
+    libraryHoverDelay: "Hover preview delay (ms)",
     cancel: "Cancel",
     loadFromLibrary: "Load from library",
     batchLibrary: "Library SVG (multiple)",
@@ -228,6 +230,7 @@ const i18n = {
     libraryBrowserCategory: "Категория библиотеки",
     libraryBrowserLoad: "Загрузить выбранный",
     libraryBrowserAdd: "Добавить в batch",
+    libraryHoverDelay: "Задержка hover-preview (мс)",
     cancel: "Отмена",
     loadFromLibrary: "Загрузить из библиотеки",
     batchLibrary: "SVG из библиотеки (несколько)",
@@ -537,6 +540,7 @@ function scheduleHoverPreview(item, mouseEvent) {
   hideHoverPreview();
   const clientX = mouseEvent?.clientX ?? 0;
   const clientY = mouseEvent?.clientY ?? 0;
+  const delayMs = clampNumber(Number(libraryHoverDelayInput.value || 1000), 100, 3000);
   hoverPreviewTimer = setTimeout(() => {
     libraryHoverPreviewImg.src = item.path;
     libraryHoverPreviewName.textContent = item.name;
@@ -546,7 +550,7 @@ function scheduleHoverPreview(item, mouseEvent) {
     libraryHoverPreview.style.top = `${Math.max(10, y)}px`;
     libraryHoverPreview.classList.remove("hidden");
     hoverPreviewTimer = null;
-  }, 1000);
+  }, delayMs);
 }
 
 function renderLibraryBrowser() {
@@ -631,6 +635,7 @@ function applyLocale() {
   document.getElementById("langLabel").textContent = t("language");
   document.getElementById("sidebarSideLabel").textContent = t("sidebarSide");
   document.getElementById("libraryCategoryLabel").textContent = t("libraryCategory");
+  document.getElementById("libraryHoverDelayLabel").textContent = t("libraryHoverDelay");
   document.getElementById("librarySingleLabel").textContent = t("librarySingle");
   document.getElementById("libraryPreviewBtn").textContent = t("previewSelected");
   document.getElementById("batchPreviewBtn").textContent = t("previewSelected");
