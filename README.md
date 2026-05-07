@@ -52,7 +52,34 @@ See [GitHub Releases](https://github.com/Volkula/seal-generator/releases).
 
 ## Run locally
 
-Open `index.html` in a modern browser.
+**Do not open `index.html` via `file://`.**  
+The app uses **`import` (ES modules)** and `importmap`; browsers block loading `app.js` from the local filesystem (CORS / unique `file:` origins), so you will see errors like *“blocked by CORS policy”* or *“Failed to load module script”*.
+
+Serve the folder over **HTTP** and open `http://127.0.0.1:8080` (or the port you choose).
+
+**Option A — Python** (if installed):
+
+```bash
+cd /path/to/seal-generator
+python -m http.server 8080
+```
+
+**Option B — batch file (Windows)**  
+Double-click `serve.bat` in the project folder (uses `python -m http.server 8080`).
+
+**Option C — PowerShell** (Windows):
+
+```powershell
+.\serve.ps1
+```
+
+**Option D — Node** (no Python):
+
+```bash
+npm start
+```
+
+(`npx serve` is run on demand; no lockfile required.)
 
 ## Deploy
 

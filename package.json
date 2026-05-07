@@ -1,0 +1,8 @@
+{
+  "name": "seal-generator",
+  "private": true,
+  "description": "Static site — use npm start only to run a local HTTP server.",
+  "scripts": {
+    "start": "npx --yes serve -l 8080 ."
+  }
+}
