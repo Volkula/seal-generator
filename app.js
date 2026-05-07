@@ -61,6 +61,7 @@ const exportZipBtn = document.getElementById("exportZipBtn");
 const flatViewBtn = document.getElementById("flatViewBtn");
 const fitBaseToEmblemBtn = document.getElementById("fitBaseToEmblemBtn");
 const fitEmblemToBaseBtn = document.getElementById("fitEmblemToBaseBtn");
+const fitInsetPctInput = document.getElementById("fitInsetPct");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
@@ -128,6 +129,15 @@ let baseWindow = null;
 let batchWindow = null;
 const DEBUG = true;
 
+/** Matches emblem/base offset sliders and number clamps (±mm). */
+const OFFSET_MM_LIMIT = 400;
+
+/** Position after aligning emblem to base, before emblem offset sliders (scene space). */
+const lastEmblemCanonicalPosition = new THREE.Vector3();
+/** Persisted emblem rotation/scale from gizmo across rebuild(buildMesh resets mesh). */
+const emblemGizmoEuler = new THREE.Euler(0, 0, 0, "XYZ");
+const emblemGizmoScale = new THREE.Vector3(1, 1, 1);
+
 const i18n = {
   en: {
     title: "Seal Generator",
@@ -183,6 +193,7 @@ const i18n = {
     exportZip: "Export ZIP (batch)",
     fitBaseToEmblem: "Auto-fit base to emblem",
     fitEmblemToBase: "Auto-fit emblem to base",
+    fitInsetPct: "Fit margin from base edge (%)",
     undo: "Undo",
     redo: "Redo",
     resetSettings: "Reset Settings",
@@ -273,6 +284,7 @@ const i18n = {
     exportZip: "Экспорт ZIP (batch)",
     fitBaseToEmblem: "Автоподгонка основания под эмблему",
     fitEmblemToBase: "Автоподгонка эмблемы под основание",
+    fitInsetPct: "Запас от края базы при подгонке (%)",
     undo: "Отменить",
     redo: "Повторить",
     resetSettings: "Сбросить настройки",
@@ -357,9 +369,16 @@ transformControls.addEventListener("objectChange", () => {
     baseOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
     baseOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
   } else if (obj === currentMesh) {
-    emblemOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
-    emblemOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
-    emblemOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
+    emblemGizmoEuler.copy(obj.rotation);
+    emblemGizmoScale.copy(obj.scale);
+    if (transformControls.mode === "translate") {
+      const ux = clampNumber(obj.position.x - lastEmblemCanonicalPosition.x, -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
+      const uy = clampNumber(obj.position.y - lastEmblemCanonicalPosition.y, -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
+      const uz = clampNumber(obj.position.z - lastEmblemCanonicalPosition.z, -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
+      emblemOffsetXInput.value = `${ux.toFixed(1)}`;
+      emblemOffsetYInput.value = `${uy.toFixed(1)}`;
+      emblemOffsetZInput.value = `${uz.toFixed(1)}`;
+    }
   }
   refreshOutputs();
 });
@@ -382,35 +401,54 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+const FLOAT_PANEL_TOP = 44;
+const FLOAT_PANEL_BOTTOM_GAP = 16;
+
+function getFloatingPanelHeight() {
+  return Math.max(360, window.innerHeight - FLOAT_PANEL_TOP - FLOAT_PANEL_BOTTOM_GAP);
+}
+
+/** Keep Model / Base / Batch winboxes tall (viewport-filled) without inner scrollbars. */
+function syncFloatingWindowHeights() {
+  const h = getFloatingPanelHeight();
+  for (const wb of [modelWindow, baseWindow, batchWindow]) {
+    if (!wb) continue;
+    wb.height = h;
+    wb.resize();
+  }
+}
+
 function createFloatingWindows() {
   if (typeof WinBox === "undefined" || !modelWindowContent || !baseWindowContent || !batchWindowContent) return;
+  const h = getFloatingPanelHeight();
   modelWindow = new WinBox({
     title: t("modelSection"),
     class: "sg-window",
     x: 276,
-    y: 44,
+    y: FLOAT_PANEL_TOP,
     width: 236,
-    height: 610,
+    height: h,
     mount: modelWindowContent,
   });
   baseWindow = new WinBox({
     title: t("baseSection"),
     class: "sg-window",
     x: 520,
-    y: 44,
+    y: FLOAT_PANEL_TOP,
     width: 236,
-    height: 575,
+    height: h,
     mount: baseWindowContent,
   });
   batchWindow = new WinBox({
     title: t("batchSection"),
     class: "sg-window",
     x: 764,
-    y: 44,
+    y: FLOAT_PANEL_TOP,
     width: 236,
-    height: 260,
+    height: h,
     mount: batchWindowContent,
   });
+  window.addEventListener("resize", syncFloatingWindowHeights);
 }
 
 function updateWindowTitles() {
@@ -701,6 +739,7 @@ function applyLocale() {
   document.getElementById("scaleYLabel").textContent = t("scaleY");
   document.getElementById("scaleZLabel").textContent = t("scaleZ");
   document.getElementById("liftLabel").textContent = t("lift");
+  document.getElementById("fitInsetPctLabel").textContent = t("fitInsetPct");
   document.getElementById("insetLabel").textContent = t("inset");
   document.getElementById("baseOffsetXLabel").textContent = t("baseOffsetX");
   document.getElementById("baseOffsetYLabel").textContent = t("baseOffsetY");
@@ -894,6 +933,8 @@ function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride 
       emblemMesh.position.z = baseBox.max.z + lift - emblemBox.min.z;
     }
   }
+  lastEmblemCanonicalPosition.copy(emblemMesh.position);
+
   emblemMesh.position.x += Number(emblemOffsetXInput.value);
   emblemMesh.position.y += Number(emblemOffsetYInput.value);
   emblemMesh.position.z += Number(emblemOffsetZInput.value);
@@ -1002,15 +1043,31 @@ function cloneMeshInWorldSpace(mesh) {
   return cloned;
 }
 
-function getBaseFitTargetSize() {
+function getEffectiveBaseDiameterXY() {
   const baseProbe = getActiveBaseMesh() || makeGeneratedBaseMesh();
   const box = new THREE.Box3().setFromObject(baseProbe);
   const size = new THREE.Vector3();
   box.getSize(size);
   baseProbe.geometry?.dispose?.();
   baseProbe.material?.dispose?.();
-  const diameter = Math.max(size.x, size.y, 10);
-  return clampNumber(Math.floor(diameter * 0.9), 10, 200);
+  return Math.max(size.x, size.y, 1e-6);
+}
+
+/** 0–45 (%): inward margin subtracted once from usable diameter scale (default 10 => 90% of base-wide fit). */
+function getFitInsetScaleFromUI() {
+  const p = clampNumber(Number(fitInsetPctInput?.value ?? 10), 0, 45);
+  return (100 - p) / 100;
+}
+
+/** Target emblem max XY dimension (mm) for fitting to base with configured edge margin. */
+function getEmblemTargetSizeForCurrentBase(options = {}) {
+  const insetScale = typeof options.insetScale === "number" ? options.insetScale : getFitInsetScaleFromUI();
+  const diameter = getEffectiveBaseDiameterXY();
+  return clampNumber(Math.floor(diameter * insetScale), 10, 200);
+}
+
+function getBaseFitTargetSize() {
+  return getEmblemTargetSizeForCurrentBase();
 }
 
 function composePreview() {
@@ -1087,6 +1144,7 @@ function composePreview() {
     currentMesh.material.emissive = new THREE.Color(0x000000);
     currentMesh.material.emissiveIntensity = 0.0;
     currentMesh.position.set(0, 0, 0);
+    lastEmblemCanonicalPosition.set(0, 0, 0);
     currentMesh.position.x += Number(emblemOffsetXInput.value);
     currentMesh.position.y += Number(emblemOffsetYInput.value);
     currentMesh.position.z += Number(emblemOffsetZInput.value);
@@ -1127,6 +1185,13 @@ function captureState() {
     generateBase: generateBaseInput.checked,
     baseDiameter: baseDiameterInput.value,
     baseThickness: baseThicknessInput.value,
+    fitInsetPct: fitInsetPctInput.value,
+    emblemRotX: emblemGizmoEuler.x,
+    emblemRotY: emblemGizmoEuler.y,
+    emblemRotZ: emblemGizmoEuler.z,
+    emblemScaleX: emblemGizmoScale.x,
+    emblemScaleY: emblemGizmoScale.y,
+    emblemScaleZ: emblemGizmoScale.z,
     flatView: isFlatView,
     svgText,
     svgName,
@@ -1164,6 +1229,15 @@ function applyState(state) {
   generateBaseInput.checked = !!state.generateBase;
   baseDiameterInput.value = state.baseDiameter ?? baseDiameterInput.value;
   baseThicknessInput.value = state.baseThickness ?? baseThicknessInput.value;
+  fitInsetPctInput.value = state.fitInsetPct ?? fitInsetPctInput.value ?? "10";
+  if ([state.emblemRotX, state.emblemRotY, state.emblemRotZ].every((v) => typeof v === "number") && Number.isFinite(state.emblemRotX)) {
+    emblemGizmoEuler.set(state.emblemRotX, state.emblemRotY, state.emblemRotZ, "XYZ");
+  }
+  if (
+    [state.emblemScaleX, state.emblemScaleY, state.emblemScaleZ].every((v) => typeof v === "number" && Number.isFinite(v))
+  ) {
+    emblemGizmoScale.set(state.emblemScaleX, state.emblemScaleY, state.emblemScaleZ);
+  }
   svgText = state.svgText ?? svgText;
   svgName = state.svgName ?? svgName;
   applyTheme(themeSelect.value);
@@ -1207,6 +1281,9 @@ function resetSettingsToDefaults() {
   generateBaseInput.checked = false;
   baseDiameterInput.value = "40";
   baseThicknessInput.value = "2.0";
+  fitInsetPctInput.value = "10";
+  emblemGizmoEuler.set(0, 0, 0, "XYZ");
+  emblemGizmoScale.set(1, 1, 1);
   baseOffsetXInput.value = "0";
   baseOffsetYInput.value = "0";
   baseOffsetZInput.value = "0";
@@ -1252,6 +1329,7 @@ const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
 renderer.domElement.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
+  if (transformControls.dragging) return;
   const rect = renderer.domElement.getBoundingClientRect();
   ndc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1426,6 +1504,8 @@ function rebuild() {
       currentMesh.material.dispose();
     }
     currentMesh = mesh;
+    currentMesh.rotation.copy(emblemGizmoEuler);
+    currentMesh.scale.copy(emblemGizmoScale);
     composePreview();
     exportBtn.disabled = false;
     exportZipBtn.disabled = uploadedFiles.length === 0;
@@ -1583,42 +1663,42 @@ baseThicknessValueInput.addEventListener("input", () => {
 baseThicknessValueInput.addEventListener("change", commitHistory);
 
 baseOffsetXValueInput.addEventListener("input", () => {
-  const value = clampNumber(Number(baseOffsetXValueInput.value || baseOffsetXInput.value), -100, 100);
+  const value = clampNumber(Number(baseOffsetXValueInput.value || baseOffsetXInput.value), -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
   baseOffsetXInput.value = `${value}`;
   rebuild();
 });
 baseOffsetXValueInput.addEventListener("change", commitHistory);
 
 baseOffsetYValueInput.addEventListener("input", () => {
-  const value = clampNumber(Number(baseOffsetYValueInput.value || baseOffsetYInput.value), -100, 100);
+  const value = clampNumber(Number(baseOffsetYValueInput.value || baseOffsetYInput.value), -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
   baseOffsetYInput.value = `${value}`;
   rebuild();
 });
 baseOffsetYValueInput.addEventListener("change", commitHistory);
 
 baseOffsetZValueInput.addEventListener("input", () => {
-  const value = clampNumber(Number(baseOffsetZValueInput.value || baseOffsetZInput.value), -100, 100);
+  const value = clampNumber(Number(baseOffsetZValueInput.value || baseOffsetZInput.value), -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
   baseOffsetZInput.value = `${value}`;
   rebuild();
 });
 baseOffsetZValueInput.addEventListener("change", commitHistory);
 
 emblemOffsetXValueInput.addEventListener("input", () => {
-  const value = clampNumber(Number(emblemOffsetXValueInput.value || emblemOffsetXInput.value), -100, 100);
+  const value = clampNumber(Number(emblemOffsetXValueInput.value || emblemOffsetXInput.value), -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
   emblemOffsetXInput.value = `${value}`;
   rebuild();
 });
 emblemOffsetXValueInput.addEventListener("change", commitHistory);
 
 emblemOffsetYValueInput.addEventListener("input", () => {
-  const value = clampNumber(Number(emblemOffsetYValueInput.value || emblemOffsetYInput.value), -100, 100);
+  const value = clampNumber(Number(emblemOffsetYValueInput.value || emblemOffsetYInput.value), -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
   emblemOffsetYInput.value = `${value}`;
   rebuild();
 });
 emblemOffsetYValueInput.addEventListener("change", commitHistory);
 
 emblemOffsetZValueInput.addEventListener("input", () => {
-  const value = clampNumber(Number(emblemOffsetZValueInput.value || emblemOffsetZInput.value), -100, 100);
+  const value = clampNumber(Number(emblemOffsetZValueInput.value || emblemOffsetZInput.value), -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);
   emblemOffsetZInput.value = `${value}`;
   rebuild();
 });
@@ -1868,17 +1948,12 @@ fitBaseToEmblemBtn.addEventListener("click", () => {
 });
 
 fitEmblemToBaseBtn.addEventListener("click", () => {
-  let diameter = Number(baseDiameterInput.value);
-  if (!generateBaseInput.checked && uploadedBaseMesh) {
-    const box = new THREE.Box3().setFromObject(uploadedBaseMesh);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    diameter = Math.max(size.x, size.y);
-  }
-  sizeInput.value = `${clampNumber(Math.floor(diameter * 0.9), 10, 200)}`;
+  sizeInput.value = `${getEmblemTargetSizeForCurrentBase()}`;
   rebuild();
   commitHistory();
 });
+
+fitInsetPctInput.addEventListener("change", commitHistory);
 
 undoBtn.addEventListener("click", () => goHistory(-1));
 redoBtn.addEventListener("click", () => goHistory(1));

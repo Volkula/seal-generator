@@ -81,22 +81,22 @@
             <label class="field">
               <span id="emblemOffsetXLabel">Emblem offset X (mm)</span>
               <div class="range-row">
-                <input id="emblemOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
-                <input id="emblemOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
+                <input id="emblemOffsetX" type="range" min="-400" max="400" step="0.1" value="0" />
+                <input id="emblemOffsetXValue" type="number" min="-400" max="400" step="0.1" value="0" />
               </div>
             </label>
             <label class="field">
               <span id="emblemOffsetYLabel">Emblem offset Y (mm)</span>
               <div class="range-row">
-                <input id="emblemOffsetY" type="range" min="-100" max="100" step="0.1" value="0" />
-                <input id="emblemOffsetYValue" type="number" min="-100" max="100" step="0.1" value="0" />
+                <input id="emblemOffsetY" type="range" min="-400" max="400" step="0.1" value="0" />
+                <input id="emblemOffsetYValue" type="number" min="-400" max="400" step="0.1" value="0" />
               </div>
             </label>
             <label class="field">
               <span id="emblemOffsetZLabel">Emblem offset Z (mm)</span>
               <div class="range-row">
-                <input id="emblemOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
-                <input id="emblemOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
+                <input id="emblemOffsetZ" type="range" min="-400" max="400" step="0.1" value="0" />
+                <input id="emblemOffsetZValue" type="number" min="-400" max="400" step="0.1" value="0" />
               </div>
             </label>
           </div>
@@ -104,22 +104,22 @@
             <label class="field">
               <span id="baseOffsetXLabel">Base offset X (mm)</span>
               <div class="range-row">
-                <input id="baseOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
-                <input id="baseOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
+                <input id="baseOffsetX" type="range" min="-400" max="400" step="0.1" value="0" />
+                <input id="baseOffsetXValue" type="number" min="-400" max="400" step="0.1" value="0" />
               </div>
             </label>
             <label class="field">
               <span id="baseOffsetYLabel">Base offset Y (mm)</span>
               <div class="range-row">
-                <input id="baseOffsetY" type="range" min="-100" max="100" step="0.1" value="0" />
-                <input id="baseOffsetYValue" type="number" min="-100" max="100" step="0.1" value="0" />
+                <input id="baseOffsetY" type="range" min="-400" max="400" step="0.1" value="0" />
+                <input id="baseOffsetYValue" type="number" min="-400" max="400" step="0.1" value="0" />
               </div>
             </label>
             <label class="field">
               <span id="baseOffsetZLabel">Base offset Z (mm)</span>
               <div class="range-row">
-                <input id="baseOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
-                <input id="baseOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
+                <input id="baseOffsetZ" type="range" min="-400" max="400" step="0.1" value="0" />
+                <input id="baseOffsetZValue" type="number" min="-400" max="400" step="0.1" value="0" />
               </div>
             </label>
           </div>
@@ -266,6 +266,11 @@
               <input id="lift" type="range" min="0" max="5" step="0.1" value="0.2" />
               <input id="liftValue" type="number" min="0" max="5" step="0.1" value="0.2" />
             </div>
+          </label>
+
+          <label class="field">
+            <span id="fitInsetPctLabel">Fit margin from base edge (%)</span>
+            <input id="fitInsetPct" type="number" min="0" max="45" step="1" value="10" />
           </label>
 
           <label class="field">

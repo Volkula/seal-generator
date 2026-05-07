@@ -547,6 +547,16 @@ button.danger {
   background: linear-gradient(180deg, #12131af0, #181a23f0);
   backdrop-filter: blur(3px);
   color: var(--text);
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.winbox.sg-window .wb-body::-webkit-scrollbar,
+.wb.sg-window .wb-body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .winbox.sg-window .wb-body .field > span,
