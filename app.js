@@ -13,6 +13,7 @@ const thicknessInput = document.getElementById("thickness");
 const densityInput = document.getElementById("density");
 const autoFixInput = document.getElementById("autoFix");
 const flipYInput = document.getElementById("flipY");
+const flipXInput = document.getElementById("flipX");
 const exportBtn = document.getElementById("exportBtn");
 const statusEl = document.getElementById("status");
 
@@ -37,6 +38,7 @@ const i18n = {
     density: "Line density",
     autoFix: "Auto-fix unclosed faces",
     flipY: "Flip vertically (top-bottom)",
+    flipX: "Flip horizontally (left-right)",
     export: "Export STL",
     statusIdle: "Load an SVG to start.",
     statusError: "Error",
@@ -45,6 +47,7 @@ const i18n = {
     statusSize: "Size",
     statusFix: "Auto-fix",
     statusFlip: "Flip Y",
+    statusFlipX: "Flip X",
     on: "on",
     off: "off",
     license:
@@ -61,6 +64,7 @@ const i18n = {
     density: "Плотность линий",
     autoFix: "Автоисправление незамкнутых контуров",
     flipY: "Отразить по вертикали (верх-низ)",
+    flipX: "Отразить по горизонтали (лево-право)",
     export: "Экспорт STL",
     statusIdle: "Загрузите SVG для начала.",
     statusError: "Ошибка",
@@ -69,6 +73,7 @@ const i18n = {
     statusSize: "Размер",
     statusFix: "Автофикс",
     statusFlip: "Флип Y",
+    statusFlipX: "Флип X",
     on: "вкл",
     off: "выкл",
     license:
@@ -118,6 +123,7 @@ function applyLocale() {
   document.getElementById("densityLabel").textContent = t("density");
   document.getElementById("autoFixLabel").textContent = t("autoFix");
   document.getElementById("flipYLabel").textContent = t("flipY");
+  document.getElementById("flipXLabel").textContent = t("flipX");
   document.getElementById("exportBtn").textContent = t("export");
   document.getElementById("licenseNote").textContent = t("license");
   if (!svgText) {
@@ -216,6 +222,10 @@ function buildMesh(svg, opts) {
     merged.scale(1, -1, 1);
     merged.computeVertexNormals();
   }
+  if (opts.flipX) {
+    merged.scale(-1, 1, 1);
+    merged.computeVertexNormals();
+  }
 
   merged.computeBoundingBox();
   const finalBox = merged.boundingBox;
@@ -256,6 +266,7 @@ function rebuild() {
     density: Number(densityInput.value),
     autoFix: autoFixInput.checked,
     flipY: flipYInput.checked,
+    flipX: flipXInput.checked,
   };
 
   try {
@@ -275,6 +286,7 @@ function rebuild() {
         `${t("statusSize")}: ${bbox.x.toFixed(2)} x ${bbox.y.toFixed(2)} x ${bbox.z.toFixed(2)} mm`,
         `${t("statusFix")}: ${opts.autoFix ? t("on") : t("off")}`,
         `${t("statusFlip")}: ${opts.flipY ? t("on") : t("off")}`,
+        `${t("statusFlipX")}: ${opts.flipX ? t("on") : t("off")}`,
       ].join("\n")
     );
   } catch (err) {
@@ -293,7 +305,7 @@ fileInput.addEventListener("change", async (e) => {
   rebuild();
 });
 
-for (const input of [sizeInput, thicknessInput, densityInput, autoFixInput, flipYInput]) {
+for (const input of [sizeInput, thicknessInput, densityInput, autoFixInput, flipYInput, flipXInput]) {
   input.addEventListener("input", rebuild);
   input.addEventListener("change", rebuild);
 }
