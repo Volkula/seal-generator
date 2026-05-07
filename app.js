@@ -56,6 +56,8 @@ const fitBaseToEmblemBtn = document.getElementById("fitBaseToEmblemBtn");
 const fitEmblemToBaseBtn = document.getElementById("fitEmblemToBaseBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
+const resetSettingsBtn = document.getElementById("resetSettingsBtn");
+const clearCacheBtn = document.getElementById("clearCacheBtn");
 const statusEl = document.getElementById("status");
 
 const densityOut = document.getElementById("densityOut");
@@ -116,6 +118,8 @@ const i18n = {
     fitEmblemToBase: "Auto-fit emblem to base",
     undo: "Undo",
     redo: "Redo",
+    resetSettings: "Reset Settings",
+    clearCache: "Clear Cache",
     modelSection: "Model",
     baseSection: "Base",
     viewSection: "View & Export",
@@ -176,6 +180,8 @@ const i18n = {
     fitEmblemToBase: "Автоподгонка эмблемы под основание",
     undo: "Отменить",
     redo: "Повторить",
+    resetSettings: "Сбросить настройки",
+    clearCache: "Очистить кэш",
     modelSection: "Модель",
     baseSection: "Основание",
     viewSection: "Вид и экспорт",
@@ -310,6 +316,8 @@ function applyLocale() {
   document.getElementById("fitEmblemToBaseBtn").textContent = t("fitEmblemToBase");
   document.getElementById("undoBtn").textContent = t("undo");
   document.getElementById("redoBtn").textContent = t("redo");
+  document.getElementById("resetSettingsBtn").textContent = t("resetSettings");
+  document.getElementById("clearCacheBtn").textContent = t("clearCache");
   document.getElementById("flatViewBtn").textContent = isFlatView ? t("perspectiveView") : t("flatView");
   document.getElementById("licenseNote").textContent = t("license");
   if (!svgText) {
@@ -472,11 +480,13 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
     return group;
   }
   // True inverse: subtract emblem volume from base.
-  const baseBrush = new Brush(baseMesh.geometry.clone());
-  baseBrush.position.copy(baseMesh.position);
+  baseMesh.updateMatrixWorld(true);
+  emblemMesh.updateMatrixWorld(true);
+  const baseWorld = baseMesh.geometry.clone().applyMatrix4(baseMesh.matrixWorld);
+  const cutWorld = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
+  const baseBrush = new Brush(baseWorld);
   baseBrush.updateMatrixWorld(true);
-  const cutBrush = new Brush(emblemMesh.geometry.clone());
-  cutBrush.position.copy(emblemMesh.position);
+  const cutBrush = new Brush(cutWorld);
   cutBrush.updateMatrixWorld(true);
   const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
   subtracted.material = baseMesh.material.clone();
@@ -628,6 +638,32 @@ function loadFromCache() {
     const state = JSON.parse(raw);
     applyState(state);
   } catch (_err) {}
+}
+
+function resetSettingsToDefaults() {
+  sizeInput.value = "60";
+  thicknessInput.value = "2";
+  liftInput.value = "0.2";
+  insetInput.value = "1.0";
+  densityInput.value = "16";
+  autoFixInput.checked = true;
+  flipXInput.checked = true;
+  flipYInput.checked = true;
+  inverseModeInput.checked = false;
+  wireframeModeInput.checked = false;
+  gizmoEnabledInput.checked = true;
+  gizmoTargetInput.value = "emblem";
+  setGizmoMode("translate");
+  generateBaseInput.checked = false;
+  baseDiameterInput.value = "40";
+  baseThicknessInput.value = "2.0";
+  baseOffsetXInput.value = "0";
+  baseOffsetYInput.value = "0";
+  baseOffsetZInput.value = "0";
+  emblemOffsetXInput.value = "0";
+  emblemOffsetYInput.value = "0";
+  emblemOffsetZInput.value = "0";
+  rebuild();
 }
 
 function commitHistory() {
@@ -1124,6 +1160,14 @@ fitEmblemToBaseBtn.addEventListener("click", () => {
 
 undoBtn.addEventListener("click", () => goHistory(-1));
 redoBtn.addEventListener("click", () => goHistory(1));
+resetSettingsBtn.addEventListener("click", () => {
+  resetSettingsToDefaults();
+  commitHistory();
+});
+clearCacheBtn.addEventListener("click", () => {
+  localStorage.removeItem("sealGeneratorStateV1");
+  setStatus("Cache cleared.");
+});
 
 window.addEventListener("keydown", (e) => {
   // Keep undo/redo higher priority than axis shortcuts.
