@@ -9,7 +9,9 @@ const fileInput = document.getElementById("svgFile");
 const themeSelect = document.getElementById("themeSelect");
 const langSelect = document.getElementById("langSelect");
 const sizeInput = document.getElementById("size");
+const sizeValueInput = document.getElementById("sizeValue");
 const thicknessInput = document.getElementById("thickness");
+const thicknessValueInput = document.getElementById("thicknessValue");
 const densityInput = document.getElementById("density");
 const autoFixInput = document.getElementById("autoFix");
 const flipYInput = document.getElementById("flipY");
@@ -17,8 +19,6 @@ const flipXInput = document.getElementById("flipX");
 const exportBtn = document.getElementById("exportBtn");
 const statusEl = document.getElementById("status");
 
-const sizeOut = document.getElementById("sizeOut");
-const thicknessOut = document.getElementById("thicknessOut");
 const densityOut = document.getElementById("densityOut");
 
 let svgText = "";
@@ -239,11 +239,6 @@ function buildMesh(svg, opts) {
 
   applyMirror(merged, opts.flipX, opts.flipY);
   merged.computeVertexNormals();
-  if (opts.flipX) {
-    merged.scale(-1, 1, 1);
-    merged.computeVertexNormals();
-  }
-
   merged.computeBoundingBox();
   const finalBox = merged.boundingBox;
   const finalSize = new THREE.Vector3();
@@ -266,9 +261,13 @@ function buildMesh(svg, opts) {
 }
 
 function refreshOutputs() {
-  sizeOut.textContent = `${Number(sizeInput.value).toFixed(0)}`;
-  thicknessOut.textContent = `${Number(thicknessInput.value).toFixed(1)}`;
+  sizeValueInput.value = `${Number(sizeInput.value).toFixed(0)}`;
+  thicknessValueInput.value = `${Number(thicknessInput.value).toFixed(1)}`;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function rebuild() {
@@ -326,6 +325,18 @@ for (const input of [sizeInput, thicknessInput, densityInput, autoFixInput, flip
   input.addEventListener("input", rebuild);
   input.addEventListener("change", rebuild);
 }
+
+sizeValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(sizeValueInput.value || sizeInput.value), 10, 200);
+  sizeInput.value = `${value}`;
+  rebuild();
+});
+
+thicknessValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(thicknessValueInput.value || thicknessInput.value), 0.5, 20);
+  thicknessInput.value = `${value}`;
+  rebuild();
+});
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
 langSelect.addEventListener("change", () => {

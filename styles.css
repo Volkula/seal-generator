@@ -119,6 +119,13 @@ h1 {
   font-weight: 600;
 }
 
+.range-row {
+  display: grid;
+  grid-template-columns: 1fr 78px;
+  gap: 10px;
+  align-items: center;
+}
+
 .checkbox {
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -129,6 +136,15 @@ input[type="range"],
 input[type="file"],
 button {
   width: 100%;
+}
+
+input[type="number"] {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  padding: 7px 8px;
 }
 
 input[type="file"] {
