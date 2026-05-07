@@ -51,7 +51,8 @@
         </div>
       </div>
 
-      <details class="accordion" open>
+      <div class="panel-grid">
+      <details class="accordion model-panel" open>
         <summary id="modelSectionLabel">Model</summary>
         <label class="field">
           <span id="svgFileLabel">SVG file</span>
@@ -125,7 +126,7 @@
         </label>
       </details>
 
-      <details class="accordion">
+      <details class="accordion base-panel" open>
         <summary id="baseSectionLabel">Base</summary>
         <label class="field">
           <span id="baseStlLabel">Base STL (optional)</span>
@@ -173,7 +174,7 @@
         <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
       </details>
 
-      <details class="accordion">
+      <details class="accordion view-panel" open>
         <summary id="viewSectionLabel">View & Export</summary>
         <div class="tool-box">
           <h3 id="box1Label">1. Gizmo & View</h3>
@@ -259,6 +260,7 @@
           <button id="clearCacheBtn">Clear Cache</button>
         </div>
       </details>
+      </div>
 
       <pre id="status">Load an SVG to start.</pre>
       <p class="license-note" id="licenseNote">
