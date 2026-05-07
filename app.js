@@ -35,6 +35,7 @@ const inverseModeInput = document.getElementById("inverseMode");
 const wireframeModeInput = document.getElementById("wireframeMode");
 const gizmoEnabledInput = document.getElementById("gizmoEnabled");
 const gizmoTargetInput = document.getElementById("gizmoTarget");
+const gizmoModeBtn = document.getElementById("gizmoModeBtn");
 const baseOffsetXInput = document.getElementById("baseOffsetX");
 const baseOffsetXValueInput = document.getElementById("baseOffsetXValue");
 const baseOffsetZInput = document.getElementById("baseOffsetZ");
@@ -67,6 +68,8 @@ let history = [];
 let historyIndex = -1;
 let isApplyingHistory = false;
 const csgEvaluator = new Evaluator();
+const gizmoModes = ["translate", "rotate", "scale"];
+let gizmoModeIndex = 0;
 
 const i18n = {
   en: {
@@ -88,6 +91,10 @@ const i18n = {
     wireframeMode: "Wireframe preview",
     gizmoEnabled: "Enable gizmo",
     gizmoTarget: "Gizmo target",
+    gizmoMode: "Gizmo",
+    gizmoTranslate: "Translate",
+    gizmoRotate: "Rotate",
+    gizmoScale: "Scale",
     baseOffsetX: "Base offset X (mm)",
     baseOffsetZ: "Base offset Z (mm)",
     emblemOffsetX: "Emblem offset X (mm)",
@@ -142,6 +149,10 @@ const i18n = {
     wireframeMode: "Wireframe-предпросмотр",
     gizmoEnabled: "Включить гизмо",
     gizmoTarget: "Цель гизмо",
+    gizmoMode: "Гизмо",
+    gizmoTranslate: "Перемещение",
+    gizmoRotate: "Поворот",
+    gizmoScale: "Масштаб",
     baseOffsetX: "Смещение основания X (мм)",
     baseOffsetZ: "Смещение основания Z (мм)",
     emblemOffsetX: "Смещение эмблемы X (мм)",
@@ -261,6 +272,7 @@ function applyLocale() {
   document.getElementById("wireframeModeLabel").textContent = t("wireframeMode");
   document.getElementById("gizmoEnabledLabel").textContent = t("gizmoEnabled");
   document.getElementById("gizmoTargetLabel").textContent = t("gizmoTarget");
+  updateGizmoModeButtonLabel();
   document.getElementById("exportBtn").textContent = t("export");
   document.getElementById("exportCombinedBtn").textContent = t("exportCombined");
   document.getElementById("exportZipBtn").textContent = t("exportZip");
@@ -310,6 +322,21 @@ function setFlatView(enabled) {
   }
   controls.update();
   flatViewBtn.textContent = enabled ? t("perspectiveView") : t("flatView");
+}
+
+function updateGizmoModeButtonLabel() {
+  const mode = gizmoModes[gizmoModeIndex];
+  const modeLabel =
+    mode === "translate" ? t("gizmoTranslate") : mode === "rotate" ? t("gizmoRotate") : t("gizmoScale");
+  gizmoModeBtn.textContent = `${t("gizmoMode")}: ${modeLabel}`;
+}
+
+function setGizmoMode(mode) {
+  const idx = gizmoModes.indexOf(mode);
+  if (idx !== -1) gizmoModeIndex = idx;
+  transformControls.setMode(gizmoModes[gizmoModeIndex]);
+  transformControls.showY = false;
+  updateGizmoModeButtonLabel();
 }
 
 function makeGeneratedBaseMesh() {
@@ -466,6 +493,7 @@ function captureState() {
     wireframeMode: wireframeModeInput.checked,
     gizmoEnabled: gizmoEnabledInput.checked,
     gizmoTarget: gizmoTargetInput.value,
+    gizmoMode: gizmoModes[gizmoModeIndex],
     baseOffsetX: baseOffsetXInput.value,
     baseOffsetZ: baseOffsetZInput.value,
     emblemOffsetX: emblemOffsetXInput.value,
@@ -497,6 +525,7 @@ function applyState(state) {
   wireframeModeInput.checked = !!state.wireframeMode;
   gizmoEnabledInput.checked = !!state.gizmoEnabled;
   gizmoTargetInput.value = state.gizmoTarget ?? "emblem";
+  setGizmoMode(state.gizmoMode ?? "translate");
   baseOffsetXInput.value = state.baseOffsetX ?? baseOffsetXInput.value;
   baseOffsetZInput.value = state.baseOffsetZ ?? baseOffsetZInput.value;
   emblemOffsetXInput.value = state.emblemOffsetX ?? emblemOffsetXInput.value;
@@ -876,6 +905,11 @@ gizmoTargetInput.addEventListener("change", () => {
   updateGizmoTarget();
   commitHistory();
 });
+gizmoModeBtn.addEventListener("click", () => {
+  gizmoModeIndex = (gizmoModeIndex + 1) % gizmoModes.length;
+  setGizmoMode(gizmoModes[gizmoModeIndex]);
+  commitHistory();
+});
 
 exportBtn.addEventListener("click", () => {
   if (!currentMesh) {
@@ -1018,6 +1052,7 @@ animate();
 refreshOutputs();
 applyTheme("dark");
 document.body.dataset.sidebar = "left";
+setGizmoMode("translate");
 applyLocale();
 loadFromCache();
 commitHistory();
