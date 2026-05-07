@@ -176,6 +176,11 @@ button:hover:not(:disabled) {
   filter: brightness(1.08);
 }
 
+#exportZipBtn {
+  margin-top: 6px;
+  background: linear-gradient(180deg, #6c4f25, #4f391a);
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

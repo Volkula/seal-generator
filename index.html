@@ -44,7 +44,7 @@
 
       <label class="field">
         <span id="svgFileLabel">SVG file</span>
-        <input id="svgFile" type="file" accept=".svg,image/svg+xml" />
+        <input id="svgFile" type="file" accept=".svg,image/svg+xml" multiple />
       </label>
 
       <label class="field">
@@ -80,11 +80,12 @@
       </label>
 
       <label class="field checkbox">
-        <input id="flipX" type="checkbox" />
+        <input id="flipX" type="checkbox" checked />
         <span id="flipXLabel">Flip horizontally (left-right)</span>
       </label>
 
       <button id="exportBtn" disabled>Export STL</button>
+      <button id="exportZipBtn" disabled>Export ZIP (batch)</button>
       <pre id="status">Load an SVG to start.</pre>
       <p class="license-note" id="licenseNote">
         All code and visual assets in this repo are released under CC0 1.0 (public domain).

@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import JSZip from "https://esm.sh/jszip@3.10.1";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
@@ -17,6 +18,7 @@ const autoFixInput = document.getElementById("autoFix");
 const flipYInput = document.getElementById("flipY");
 const flipXInput = document.getElementById("flipX");
 const exportBtn = document.getElementById("exportBtn");
+const exportZipBtn = document.getElementById("exportZipBtn");
 const statusEl = document.getElementById("status");
 
 const densityOut = document.getElementById("densityOut");
@@ -25,6 +27,7 @@ let svgText = "";
 let svgName = "model";
 let currentMesh = null;
 let currentLang = "en";
+let uploadedFiles = [];
 
 const i18n = {
   en: {
@@ -40,6 +43,7 @@ const i18n = {
     flipY: "Flip vertically (top-bottom)",
     flipX: "Flip horizontally (left-right)",
     export: "Export STL",
+    exportZip: "Export ZIP (batch)",
     statusIdle: "Load an SVG to start.",
     statusError: "Error",
     statusFile: "File",
@@ -48,6 +52,7 @@ const i18n = {
     statusFix: "Auto-fix",
     statusFlip: "Flip Y",
     statusFlipX: "Flip X",
+    statusBatch: "Batch files",
     on: "on",
     off: "off",
     license:
@@ -66,6 +71,7 @@ const i18n = {
     flipY: "Отразить по вертикали (верх-низ)",
     flipX: "Отразить по горизонтали (лево-право)",
     export: "Экспорт STL",
+    exportZip: "Экспорт ZIP (batch)",
     statusIdle: "Загрузите SVG для начала.",
     statusError: "Ошибка",
     statusFile: "Файл",
@@ -74,6 +80,7 @@ const i18n = {
     statusFix: "Автофикс",
     statusFlip: "Флип Y",
     statusFlipX: "Флип X",
+    statusBatch: "Файлов в batch",
     on: "вкл",
     off: "выкл",
     license:
@@ -125,6 +132,7 @@ function applyLocale() {
   document.getElementById("flipYLabel").textContent = t("flipY");
   document.getElementById("flipXLabel").textContent = t("flipX");
   document.getElementById("exportBtn").textContent = t("export");
+  document.getElementById("exportZipBtn").textContent = t("exportZip");
   document.getElementById("licenseNote").textContent = t("license");
   if (!svgText) {
     setStatus(t("statusIdle"));
@@ -295,9 +303,11 @@ function rebuild() {
     currentMesh = mesh;
     scene.add(currentMesh);
     exportBtn.disabled = false;
+    exportZipBtn.disabled = uploadedFiles.length === 0;
     setStatus(
       [
         `${t("statusFile")}: ${svgName}`,
+        `${t("statusBatch")}: ${uploadedFiles.length}`,
         `${t("statusShapes")}: ${shapeCount}`,
         `${t("statusSize")}: ${bbox.x.toFixed(2)} x ${bbox.y.toFixed(2)} x ${bbox.z.toFixed(2)} mm`,
         `${t("statusFix")}: ${opts.autoFix ? t("on") : t("off")}`,
@@ -312,12 +322,14 @@ function rebuild() {
 }
 
 fileInput.addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) {
     return;
   }
-  svgName = file.name.replace(/\.svg$/i, "");
-  svgText = await file.text();
+  uploadedFiles = files;
+  const first = files[0];
+  svgName = first.name.replace(/\.svg$/i, "");
+  svgText = await first.text();
   rebuild();
 });
 
@@ -357,6 +369,57 @@ exportBtn.addEventListener("click", () => {
   a.download = `${svgName || "model"}.stl`;
   a.click();
   URL.revokeObjectURL(url);
+});
+
+exportZipBtn.addEventListener("click", async () => {
+  if (!uploadedFiles.length) {
+    return;
+  }
+
+  const opts = {
+    targetSize: Number(sizeInput.value),
+    thickness: Number(thicknessInput.value),
+    density: Number(densityInput.value),
+    autoFix: autoFixInput.checked,
+    flipY: flipYInput.checked,
+    flipX: flipXInput.checked,
+  };
+
+  const zip = new JSZip();
+  const exporter = new STLExporter();
+  let success = 0;
+
+  setStatus(`${t("statusBatch")}: ${uploadedFiles.length}\nProcessing...`);
+
+  for (const file of uploadedFiles) {
+    try {
+      const text = await file.text();
+      const { mesh } = buildMesh(text, opts);
+      const stl = exporter.parse(mesh, { binary: false });
+      const name = file.name.replace(/\.svg$/i, "") || "model";
+      zip.file(`${name}.stl`, stl);
+      success += 1;
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    } catch (err) {
+      // Skip broken files and continue batch.
+    }
+  }
+
+  if (success === 0) {
+    setStatus(`${t("statusError")}: no files were converted`);
+    return;
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "seal-generator-batch.zip";
+  a.click();
+  URL.revokeObjectURL(url);
+
+  setStatus(`${t("statusBatch")}: ${uploadedFiles.length}\nConverted: ${success}`);
 });
 
 function animate() {
