@@ -558,8 +558,15 @@ function updateGizmoTarget() {
   }
   selectedObjectType = gizmoTargetInput.value === "base" ? "base" : "emblem";
   updateSelectedObjectUI();
+  const isBaseTarget = gizmoTargetInput.value === "base";
   const baseTarget = currentInversePreviewMesh || currentBaseMesh;
-  const target = gizmoTargetInput.value === "base" ? baseTarget : currentMesh;
+  const target = isBaseTarget ? baseTarget : currentMesh;
+  // In inverse mode, hide cutter mesh while editing base to avoid ghost-like overlay.
+  if (inverseModeInput.checked && currentMesh) {
+    currentMesh.visible = !isBaseTarget;
+  } else if (currentMesh) {
+    currentMesh.visible = true;
+  }
   if (target) {
     transformControls.visible = true;
     transformControls.attach(target);
@@ -731,11 +738,12 @@ function composePreview() {
         scene.add(previewCombined);
         currentInversePreviewMesh = previewCombined;
       }
-      currentMesh.material.transparent = true;
-      currentMesh.material.opacity = 0.82;
+      currentMesh.material.transparent = false;
+      currentMesh.material.opacity = 1.0;
       currentMesh.material.color.setHex(0xff7a59);
       currentMesh.material.emissive = new THREE.Color(0x5a1f00);
       currentMesh.material.emissiveIntensity = 0.55;
+      currentMesh.visible = false;
       scene.add(currentMesh);
       // Don't render the source base mesh in inverse mode to avoid "ghost" interaction.
       currentBaseMesh.visible = false;
@@ -1352,14 +1360,9 @@ exportCombinedBtn.addEventListener("click", () => {
   );
   const model = currentMesh.clone();
   placeEmblem(activeBase, model);
-  let result = buildCombinedMeshForExport(activeBase, model);
-  if (!result && inverseModeInput.checked && currentInversePreviewMesh) {
-    // Fallback: reuse the already computed inverse preview geometry.
-    dlog("export.combined.fallback.previewMesh", {
-      previewBox: boxInfo(currentInversePreviewMesh),
-    });
-    result = currentInversePreviewMesh.clone();
-  }
+  // In inverse mode export exactly what preview already shows.
+  let result = inverseModeInput.checked && currentInversePreviewMesh ? currentInversePreviewMesh.clone() : null;
+  if (!result) result = buildCombinedMeshForExport(activeBase, model);
   if (!result) {
     dlog("export.combined.failed", {});
     setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
