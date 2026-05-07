@@ -23,6 +23,12 @@ const sizeInput = document.getElementById("size");
 const sizeValueInput = document.getElementById("sizeValue");
 const thicknessInput = document.getElementById("thickness");
 const thicknessValueInput = document.getElementById("thicknessValue");
+const scaleXInput = document.getElementById("scaleX");
+const scaleXValueInput = document.getElementById("scaleXValue");
+const scaleYInput = document.getElementById("scaleY");
+const scaleYValueInput = document.getElementById("scaleYValue");
+const scaleZInput = document.getElementById("scaleZ");
+const scaleZValueInput = document.getElementById("scaleZValue");
 const liftInput = document.getElementById("lift");
 const liftValueInput = document.getElementById("liftValue");
 const insetInput = document.getElementById("inset");
@@ -95,6 +101,9 @@ const i18n = {
     baseThickness: "Base thickness (mm)",
     size: "Size (max dimension, mm)",
     thickness: "Thickness (mm)",
+    scaleX: "Scale X",
+    scaleY: "Scale Y",
+    scaleZ: "Scale Z",
     lift: "Lift over base (mm)",
     inset: "Inset depth (inverse, mm)",
     inverseMode: "Inverse (negative stamp)",
@@ -162,6 +171,9 @@ const i18n = {
     baseThickness: "Толщина основания (мм)",
     size: "Размер (макс. габарит, мм)",
     thickness: "Толщина (мм)",
+    scaleX: "Масштаб X",
+    scaleY: "Масштаб Y",
+    scaleZ: "Масштаб Z",
     lift: "Подъем над основанием (мм)",
     inset: "Глубина утапливания (inverse, мм)",
     inverseMode: "Inverse (негатив для оттиска)",
@@ -319,6 +331,9 @@ function applyLocale() {
   document.getElementById("baseThicknessLabel").textContent = t("baseThickness");
   document.getElementById("sizeLabel").textContent = t("size");
   document.getElementById("thicknessLabel").textContent = t("thickness");
+  document.getElementById("scaleXLabel").textContent = t("scaleX");
+  document.getElementById("scaleYLabel").textContent = t("scaleY");
+  document.getElementById("scaleZLabel").textContent = t("scaleZ");
   document.getElementById("liftLabel").textContent = t("lift");
   document.getElementById("insetLabel").textContent = t("inset");
   document.getElementById("baseOffsetXLabel").textContent = t("baseOffsetX");
@@ -488,10 +503,15 @@ function placeEmblem(baseMesh, emblemMesh) {
   const inverse = inverseModeInput.checked;
   emblemMesh.position.set(0, 0, 0);
   const baseBox = baseMesh ? new THREE.Box3().setFromObject(baseMesh) : null;
-  const emblemBox = new THREE.Box3().setFromObject(emblemMesh);
+  let emblemBox = new THREE.Box3().setFromObject(emblemMesh);
   if (baseBox) {
     if (inverse) {
-      emblemMesh.position.z = baseBox.max.z - inset - emblemBox.max.z;
+      const currentDepth = Math.max(emblemBox.max.z - emblemBox.min.z, 1e-6);
+      const targetDepth = Math.max(inset, 0.05);
+      emblemMesh.scale.z *= targetDepth / currentDepth;
+      emblemBox = new THREE.Box3().setFromObject(emblemMesh);
+      const desiredTop = baseBox.max.z + 0.01;
+      emblemMesh.position.z += desiredTop - emblemBox.max.z;
     } else {
       emblemMesh.position.z = baseBox.max.z + lift - emblemBox.min.z;
     }
@@ -595,6 +615,9 @@ function captureState() {
     sidebarSide: sidebarSideSelect.value,
     size: sizeInput.value,
     thickness: thicknessInput.value,
+    scaleX: scaleXInput.value,
+    scaleY: scaleYInput.value,
+    scaleZ: scaleZInput.value,
     lift: liftInput.value,
     inset: insetInput.value,
     density: densityInput.value,
@@ -629,6 +652,9 @@ function applyState(state) {
   sidebarSideSelect.value = state.sidebarSide ?? "left";
   sizeInput.value = state.size ?? sizeInput.value;
   thicknessInput.value = state.thickness ?? thicknessInput.value;
+  scaleXInput.value = state.scaleX ?? scaleXInput.value;
+  scaleYInput.value = state.scaleY ?? scaleYInput.value;
+  scaleZInput.value = state.scaleZ ?? scaleZInput.value;
   liftInput.value = state.lift ?? liftInput.value;
   insetInput.value = state.inset ?? insetInput.value;
   densityInput.value = state.density ?? densityInput.value;
@@ -675,6 +701,9 @@ function loadFromCache() {
 function resetSettingsToDefaults() {
   sizeInput.value = "60";
   thicknessInput.value = "2";
+  scaleXInput.value = "1";
+  scaleYInput.value = "1";
+  scaleZInput.value = "1";
   liftInput.value = "0.2";
   insetInput.value = "1.0";
   densityInput.value = "16";
@@ -819,6 +848,10 @@ function buildMesh(svg, opts) {
   box2.getCenter(center);
   // Keep emblem on Z=0 plane in Z-up world.
   merged.translate(-center.x, -center.y, -box2.min.z);
+  merged.scale(opts.scaleX || 1, opts.scaleY || 1, opts.scaleZ || 1);
+  merged.computeBoundingBox();
+  const b3 = merged.boundingBox;
+  merged.translate(0, 0, -b3.min.z);
 
   applyMirror(merged, opts.flipX, opts.flipY);
   merged.computeVertexNormals();
@@ -846,6 +879,9 @@ function buildMesh(svg, opts) {
 function refreshOutputs() {
   sizeValueInput.value = `${Number(sizeInput.value).toFixed(0)}`;
   thicknessValueInput.value = `${Number(thicknessInput.value).toFixed(1)}`;
+  scaleXValueInput.value = `${Number(scaleXInput.value).toFixed(2)}`;
+  scaleYValueInput.value = `${Number(scaleYInput.value).toFixed(2)}`;
+  scaleZValueInput.value = `${Number(scaleZInput.value).toFixed(2)}`;
   liftValueInput.value = `${Number(liftInput.value).toFixed(1)}`;
   insetValueInput.value = `${Number(insetInput.value).toFixed(1)}`;
   baseDiameterValueInput.value = `${Number(baseDiameterInput.value).toFixed(0)}`;
@@ -872,6 +908,9 @@ function rebuild() {
   const opts = {
     targetSize: Number(sizeInput.value),
     thickness: Number(thicknessInput.value),
+    scaleX: Number(scaleXInput.value),
+    scaleY: Number(scaleYInput.value),
+    scaleZ: Number(scaleZInput.value),
     density: Number(densityInput.value),
     autoFix: autoFixInput.checked,
     flipY: flipYInput.checked,
@@ -963,7 +1002,7 @@ baseStlFileInput.addEventListener("change", async (e) => {
   commitHistory();
 });
 
-for (const input of [sizeInput, thicknessInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetYInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetYInput, emblemOffsetZInput, wireframeModeInput, gizmoEnabledInput]) {
+for (const input of [sizeInput, thicknessInput, scaleXInput, scaleYInput, scaleZInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetYInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetYInput, emblemOffsetZInput, wireframeModeInput, gizmoEnabledInput]) {
   input.addEventListener("input", rebuild);
   input.addEventListener("change", () => {
     rebuild();
@@ -992,6 +1031,27 @@ thicknessValueInput.addEventListener("input", () => {
   rebuild();
 });
 thicknessValueInput.addEventListener("change", commitHistory);
+
+scaleXValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(scaleXValueInput.value || scaleXInput.value), 0.1, 3);
+  scaleXInput.value = `${value}`;
+  rebuild();
+});
+scaleXValueInput.addEventListener("change", commitHistory);
+
+scaleYValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(scaleYValueInput.value || scaleYInput.value), 0.1, 3);
+  scaleYInput.value = `${value}`;
+  rebuild();
+});
+scaleYValueInput.addEventListener("change", commitHistory);
+
+scaleZValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(scaleZValueInput.value || scaleZInput.value), 0.1, 3);
+  scaleZInput.value = `${value}`;
+  rebuild();
+});
+scaleZValueInput.addEventListener("change", commitHistory);
 
 liftValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(liftValueInput.value || liftInput.value), 0, 5);
@@ -1132,6 +1192,9 @@ exportZipBtn.addEventListener("click", async () => {
   const opts = {
     targetSize: Number(sizeInput.value),
     thickness: Number(thicknessInput.value),
+    scaleX: Number(scaleXInput.value),
+    scaleY: Number(scaleYInput.value),
+    scaleZ: Number(scaleZInput.value),
     density: Number(densityInput.value),
     autoFix: autoFixInput.checked,
     flipY: flipYInput.checked,
