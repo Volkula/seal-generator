@@ -7,6 +7,7 @@ import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { Evaluator, Brush, SUBTRACTION } from "three-bvh-csg";
+import { CSG } from "https://esm.sh/three-csg-ts@3.2.0";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
@@ -606,12 +607,32 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
 
   try {
     const result = attempt(0) || attempt(0.2) || attempt(1.0);
-    dlog("inverse.export.end", { success: !!result });
-    return result;
+    if (result) {
+      dlog("inverse.export.end", { success: true, method: "bvh-csg" });
+      return result;
+    }
   } catch (_err) {
-    dlog("inverse.export.exception", { message: String(_err) });
-    return null;
+    dlog("inverse.export.exception", { message: String(_err), method: "bvh-csg" });
   }
+
+  // Fallback: BSP-based subtraction (slower, but often robust on messy SVG meshes).
+  try {
+    const baseClone = baseMesh.clone();
+    const cutClone = emblemMesh.clone();
+    const bspResult = CSG.subtract(baseClone, cutClone);
+    const vertCount = bspResult?.geometry?.attributes?.position?.count || 0;
+    dlog("inverse.export.fallback.bsp", { vertCount });
+    if (vertCount > 0) {
+      bspResult.material = baseMesh.material.clone();
+      dlog("inverse.export.end", { success: true, method: "three-csg-ts" });
+      return bspResult;
+    }
+  } catch (_err) {
+    dlog("inverse.export.exception", { message: String(_err), method: "three-csg-ts" });
+  }
+
+  dlog("inverse.export.end", { success: false, method: "none" });
+  return null;
 }
 
 function composePreview() {
