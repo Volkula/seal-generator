@@ -535,8 +535,10 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   let baseWorld = baseMesh.geometry.clone().applyMatrix4(baseMesh.matrixWorld);
   let cutWorld = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
   // Normalize topology for more stable CSG on SVG extrusions.
-  baseWorld = mergeVertices(baseWorld.toNonIndexed(), 1e-5);
-  cutWorld = mergeVertices(cutWorld.toNonIndexed(), 1e-5);
+  if (baseWorld.index) baseWorld = baseWorld.toNonIndexed();
+  if (cutWorld.index) cutWorld = cutWorld.toNonIndexed();
+  baseWorld = mergeVertices(baseWorld, 1e-5);
+  cutWorld = mergeVertices(cutWorld, 1e-5);
   const baseBrush = new Brush(baseWorld);
   baseBrush.updateMatrixWorld(true);
   const cutBrush = new Brush(cutWorld);
