@@ -239,7 +239,8 @@ function makeGeneratedBaseMesh() {
   const thickness = Number(baseThicknessInput.value);
   const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, 96);
   geometry.rotateX(Math.PI / 2);
-  geometry.translate(0, 0, thickness / 2);
+  // Keep base below Z=0 so emblem sits above the zero plane.
+  geometry.translate(0, 0, -thickness / 2);
   geometry.computeVertexNormals();
   return new THREE.Mesh(
     geometry,
@@ -283,7 +284,7 @@ function composePreview() {
     const modelBox = new THREE.Box3().setFromObject(currentMesh);
     const lift = Number(liftInput.value);
     currentMesh.position.set(0, 0, 0);
-    currentMesh.position.z += baseBox.max.z - modelBox.min.z + lift;
+    currentMesh.position.z += baseBox.max.z + lift - modelBox.min.z;
     scene.add(base);
     exportCombinedBtn.disabled = false;
   } else {
@@ -509,6 +510,7 @@ function rebuild() {
   try {
     const { mesh, shapeCount, bbox } = buildMesh(svgText, opts);
     if (currentMesh) {
+      scene.remove(currentMesh);
       currentMesh.geometry.dispose();
       currentMesh.material.dispose();
     }
@@ -567,7 +569,8 @@ baseStlFileInput.addEventListener("change", async (e) => {
   const box = geometry.boundingBox;
   const center = new THREE.Vector3();
   box.getCenter(center);
-  geometry.translate(-center.x, -center.y, -box.min.z);
+  // Keep uploaded base top face at Z=0.
+  geometry.translate(-center.x, -center.y, -box.max.z);
   geometry.computeVertexNormals();
 
   if (uploadedBaseMesh) {
@@ -672,7 +675,7 @@ exportCombinedBtn.addEventListener("click", () => {
   const baseBox = new THREE.Box3().setFromObject(activeBase);
   const model = currentMesh.clone();
   const modelBox = new THREE.Box3().setFromObject(model);
-  model.position.z += baseBox.max.z - modelBox.min.z + Number(liftInput.value);
+  model.position.z += baseBox.max.z + Number(liftInput.value) - modelBox.min.z;
   const exporter = new STLExporter();
   const combined = new THREE.Group();
   combined.add(activeBase);
