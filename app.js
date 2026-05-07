@@ -1818,7 +1818,7 @@ libraryPreviewPrimaryBtn.addEventListener("click", async () => {
     return;
   }
   const selectedPaths = Array.from(batchLibrarySelectedPaths);
-  if (selectedPaths.length === 0) return;
+  const retainedLocals = batchFiles.filter((item) => !item.key);
   const added = [];
   for (const path of selectedPaths) {
     try {
@@ -1829,11 +1829,10 @@ libraryPreviewPrimaryBtn.addEventListener("click", async () => {
       added.push(makeVirtualBatchFile(name, text, path));
     } catch (_err) {}
   }
-  if (added.length > 0) {
-    batchFiles = [...batchFiles, ...added];
-    updateBatchButtonState();
-    setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
-  }
+  // Replace library-sourced rows with the current modal selection (no duplicate append on reopen).
+  batchFiles = [...retainedLocals, ...added];
+  updateBatchButtonState();
+  setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
   closeLibraryPreview();
 });
 
