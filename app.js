@@ -129,6 +129,8 @@ let history = [];
 let historyIndex = -1;
 let isApplyingHistory = false;
 const csgEvaluator = new Evaluator();
+// sanitizeGeometryForMerge strips uv/normal before merging; tell three-bvh-csg to only consume what we provide.
+csgEvaluator.attributes = ["position", "normal"];
 const gizmoModes = ["translate", "rotate", "scale"];
 let gizmoModeIndex = 0;
 let selectedObjectType = "emblem";
@@ -1202,8 +1204,10 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
       if (!silentLogs) dlog("inverse.export.end", { success: true, method: "bvh-csg" });
       return result;
     }
-  } catch (_err) {
-    if (!silentLogs) dlog("inverse.export.exception", { message: String(_err), method: "bvh-csg" });
+  } catch (err) {
+    if (!silentLogs) dlog("inverse.export.exception", { message: String(err), method: "bvh-csg" });
+    // eslint-disable-next-line no-console
+    console.error("[seal-generator] CSG SUBTRACTION threw", err);
   }
 
   if (!silentLogs) dlog("inverse.export.end", { success: false, method: "none" });
