@@ -398,6 +398,7 @@ button:disabled {
   background: #121726;
   padding: 8px;
   cursor: pointer;
+  overflow: hidden;
 }
 
 .library-card.active {
@@ -413,12 +414,15 @@ button:disabled {
   display: grid;
   place-items: center;
   margin-bottom: 6px;
+  overflow: hidden;
 }
 
 .library-thumb img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
+  object-position: center;
+  display: block;
 }
 
 .library-name {
@@ -427,6 +431,37 @@ button:disabled {
   line-height: 1.25;
   max-height: 2.5em;
   overflow: hidden;
+}
+
+.library-hover-preview {
+  position: fixed;
+  z-index: 10001;
+  width: 320px;
+  border: 1px solid #4a6aa5;
+  border-radius: 10px;
+  background: #0a0f1be8;
+  box-shadow: 0 12px 28px #00000080;
+  padding: 10px;
+  pointer-events: none;
+}
+
+.library-hover-preview.hidden {
+  display: none;
+}
+
+.library-hover-preview img {
+  width: 100%;
+  height: 220px;
+  object-fit: contain;
+  background: #e9edf2;
+  border-radius: 8px;
+  display: block;
+}
+
+.library-hover-preview p {
+  margin: 8px 2px 0;
+  font-size: 11px;
+  color: #dfe8ff;
 }
 
 #viewport {

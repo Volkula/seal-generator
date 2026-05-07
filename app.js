@@ -93,6 +93,9 @@ const librarySvgGrid = document.getElementById("librarySvgGrid");
 const libraryPreviewPrimaryBtn = document.getElementById("libraryPreviewPrimaryBtn");
 const libraryPreviewCancelBtn = document.getElementById("libraryPreviewCancelBtn");
 const libraryPreviewCloseBtn = document.getElementById("libraryPreviewCloseBtn");
+const libraryHoverPreview = document.getElementById("libraryHoverPreview");
+const libraryHoverPreviewImg = document.getElementById("libraryHoverPreviewImg");
+const libraryHoverPreviewName = document.getElementById("libraryHoverPreviewName");
 
 const densityOut = document.getElementById("densityOut");
 
@@ -109,6 +112,7 @@ let libraryManifest = [];
 let libraryBrowserMode = "single";
 let libraryBrowserCategory = "";
 let libraryBrowserSelectedPath = "";
+let hoverPreviewTimer = null;
 let isFlatView = false;
 let history = [];
 let historyIndex = -1;
@@ -518,6 +522,31 @@ function updateLibraryItemLists() {
 
 function closeLibraryPreview() {
   libraryPreviewModal.classList.add("hidden");
+  hideHoverPreview();
+}
+
+function hideHoverPreview() {
+  if (hoverPreviewTimer) {
+    clearTimeout(hoverPreviewTimer);
+    hoverPreviewTimer = null;
+  }
+  libraryHoverPreview.classList.add("hidden");
+}
+
+function scheduleHoverPreview(item, mouseEvent) {
+  hideHoverPreview();
+  const clientX = mouseEvent?.clientX ?? 0;
+  const clientY = mouseEvent?.clientY ?? 0;
+  hoverPreviewTimer = setTimeout(() => {
+    libraryHoverPreviewImg.src = item.path;
+    libraryHoverPreviewName.textContent = item.name;
+    const x = Math.min(clientX + 18, window.innerWidth - 340);
+    const y = Math.min(clientY + 18, window.innerHeight - 300);
+    libraryHoverPreview.style.left = `${Math.max(10, x)}px`;
+    libraryHoverPreview.style.top = `${Math.max(10, y)}px`;
+    libraryHoverPreview.classList.remove("hidden");
+    hoverPreviewTimer = null;
+  }, 1000);
 }
 
 function renderLibraryBrowser() {
@@ -549,6 +578,15 @@ function renderLibraryBrowser() {
     card.addEventListener("click", () => {
       libraryBrowserSelectedPath = item.path;
       renderLibraryBrowser();
+    });
+    card.addEventListener("mouseenter", (e) => scheduleHoverPreview(item, e));
+    card.addEventListener("mouseleave", hideHoverPreview);
+    card.addEventListener("mousemove", (e) => {
+      if (libraryHoverPreview.classList.contains("hidden")) return;
+      const x = Math.min(e.clientX + 18, window.innerWidth - 340);
+      const y = Math.min(e.clientY + 18, window.innerHeight - 300);
+      libraryHoverPreview.style.left = `${Math.max(10, x)}px`;
+      libraryHoverPreview.style.top = `${Math.max(10, y)}px`;
     });
     librarySvgGrid.appendChild(card);
   }
