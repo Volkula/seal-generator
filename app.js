@@ -6,7 +6,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import JSZip from "https://esm.sh/jszip@3.10.1";
-import { Evaluator, Brush, SUBTRACTION } from "https://esm.sh/three-bvh-csg@0.0.17?external=three";
+import { Evaluator, Brush, SUBTRACTION } from "https://esm.sh/three-bvh-csg@0.0.17?bundle";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
