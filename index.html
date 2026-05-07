@@ -51,129 +51,6 @@
         </div>
       </div>
 
-      <div class="panel-grid">
-      <details class="accordion model-panel" open>
-        <summary id="modelSectionLabel">Model</summary>
-        <label class="field">
-          <span id="svgFileLabel">SVG file</span>
-          <input id="svgFile" type="file" accept=".svg,image/svg+xml" multiple />
-        </label>
-
-        <label class="field">
-          <span id="sizeLabel">Size (max dimension, mm)</span>
-          <div class="range-row">
-            <input id="size" type="range" min="10" max="200" step="1" value="60" />
-            <input id="sizeValue" type="number" min="10" max="200" step="1" value="60" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="thicknessLabel">Thickness (mm)</span>
-          <div class="range-row">
-            <input id="thickness" type="range" min="0.5" max="20" step="0.1" value="2" />
-            <input id="thicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="scaleXLabel">Scale X</span>
-          <div class="range-row">
-            <input id="scaleX" type="range" min="0.1" max="3" step="0.01" value="1" />
-            <input id="scaleXValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="scaleYLabel">Scale Y</span>
-          <div class="range-row">
-            <input id="scaleY" type="range" min="0.1" max="3" step="0.01" value="1" />
-            <input id="scaleYValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="scaleZLabel">Scale Z</span>
-          <div class="range-row">
-            <input id="scaleZ" type="range" min="0.1" max="3" step="0.01" value="1" />
-            <input id="scaleZValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="densityLabel">Line density</span>
-          <input id="density" type="range" min="4" max="64" step="1" value="16" />
-          <output id="densityOut">16</output>
-        </label>
-
-        <label class="field checkbox">
-          <input id="autoFix" type="checkbox" checked />
-          <span id="autoFixLabel">Auto-fix unclosed faces</span>
-        </label>
-
-        <label class="field checkbox">
-          <input id="flipY" type="checkbox" checked />
-          <span id="flipYLabel">Flip vertically (top-bottom)</span>
-        </label>
-
-        <label class="field checkbox">
-          <input id="flipX" type="checkbox" checked />
-          <span id="flipXLabel">Flip horizontally (left-right)</span>
-        </label>
-
-        <label class="field checkbox">
-          <input id="inverseMode" type="checkbox" />
-          <span id="inverseModeLabel">Inverse (negative stamp)</span>
-        </label>
-      </details>
-
-      <details class="accordion base-panel" open>
-        <summary id="baseSectionLabel">Base</summary>
-        <label class="field">
-          <span id="baseStlLabel">Base STL (optional)</span>
-          <input id="baseStlFile" type="file" accept=".stl,model/stl" />
-        </label>
-
-        <label class="field checkbox">
-          <input id="generateBase" type="checkbox" />
-          <span id="generateBaseLabel">Generate round base</span>
-        </label>
-
-        <label class="field">
-          <span id="baseDiameterLabel">Base diameter (mm)</span>
-          <div class="range-row">
-            <input id="baseDiameter" type="range" min="10" max="200" step="1" value="40" />
-            <input id="baseDiameterValue" type="number" min="10" max="200" step="1" value="40" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="baseThicknessLabel">Base thickness (mm)</span>
-          <div class="range-row">
-            <input id="baseThickness" type="range" min="0.5" max="20" step="0.1" value="2" />
-            <input id="baseThicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="liftLabel">Lift over base (mm)</span>
-          <div class="range-row">
-            <input id="lift" type="range" min="0" max="5" step="0.1" value="0.2" />
-            <input id="liftValue" type="number" min="0" max="5" step="0.1" value="0.2" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="insetLabel">Inset depth (inverse, mm)</span>
-          <div class="range-row">
-            <input id="inset" type="range" min="0" max="10" step="0.1" value="1.0" />
-            <input id="insetValue" type="number" min="0" max="10" step="0.1" value="1.0" />
-          </div>
-        </label>
-
-        <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
-        <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
-      </details>
-
       <details class="accordion view-panel" open>
         <summary id="viewSectionLabel">View & Export</summary>
         <div class="tool-box">
@@ -260,7 +137,6 @@
           <button id="clearCacheBtn">Clear Cache</button>
         </div>
       </details>
-      </div>
 
       <pre id="status">Load an SVG to start.</pre>
       <p class="license-note" id="licenseNote">
@@ -268,7 +144,131 @@
       </p>
     </aside>
 
-    <main id="viewport"></main>
+    <main id="viewport">
+      <div class="floating-panels">
+        <details class="accordion float-panel model-panel" open>
+          <summary id="modelSectionLabel">Model</summary>
+          <label class="field">
+            <span id="svgFileLabel">SVG file</span>
+            <input id="svgFile" type="file" accept=".svg,image/svg+xml" multiple />
+          </label>
+
+          <label class="field">
+            <span id="sizeLabel">Size (max dimension, mm)</span>
+            <div class="range-row">
+              <input id="size" type="range" min="10" max="200" step="1" value="60" />
+              <input id="sizeValue" type="number" min="10" max="200" step="1" value="60" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="thicknessLabel">Thickness (mm)</span>
+            <div class="range-row">
+              <input id="thickness" type="range" min="0.5" max="20" step="0.1" value="2" />
+              <input id="thicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="scaleXLabel">Scale X</span>
+            <div class="range-row">
+              <input id="scaleX" type="range" min="0.1" max="3" step="0.01" value="1" />
+              <input id="scaleXValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="scaleYLabel">Scale Y</span>
+            <div class="range-row">
+              <input id="scaleY" type="range" min="0.1" max="3" step="0.01" value="1" />
+              <input id="scaleYValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="scaleZLabel">Scale Z</span>
+            <div class="range-row">
+              <input id="scaleZ" type="range" min="0.1" max="3" step="0.01" value="1" />
+              <input id="scaleZValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="densityLabel">Line density</span>
+            <input id="density" type="range" min="4" max="64" step="1" value="16" />
+            <output id="densityOut">16</output>
+          </label>
+
+          <label class="field checkbox">
+            <input id="autoFix" type="checkbox" checked />
+            <span id="autoFixLabel">Auto-fix unclosed faces</span>
+          </label>
+
+          <label class="field checkbox">
+            <input id="flipY" type="checkbox" checked />
+            <span id="flipYLabel">Flip vertically (top-bottom)</span>
+          </label>
+
+          <label class="field checkbox">
+            <input id="flipX" type="checkbox" checked />
+            <span id="flipXLabel">Flip horizontally (left-right)</span>
+          </label>
+
+          <label class="field checkbox">
+            <input id="inverseMode" type="checkbox" />
+            <span id="inverseModeLabel">Inverse (negative stamp)</span>
+          </label>
+        </details>
+
+        <details class="accordion float-panel base-panel" open>
+          <summary id="baseSectionLabel">Base</summary>
+          <label class="field">
+            <span id="baseStlLabel">Base STL (optional)</span>
+            <input id="baseStlFile" type="file" accept=".stl,model/stl" />
+          </label>
+
+          <label class="field checkbox">
+            <input id="generateBase" type="checkbox" />
+            <span id="generateBaseLabel">Generate round base</span>
+          </label>
+
+          <label class="field">
+            <span id="baseDiameterLabel">Base diameter (mm)</span>
+            <div class="range-row">
+              <input id="baseDiameter" type="range" min="10" max="200" step="1" value="40" />
+              <input id="baseDiameterValue" type="number" min="10" max="200" step="1" value="40" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="baseThicknessLabel">Base thickness (mm)</span>
+            <div class="range-row">
+              <input id="baseThickness" type="range" min="0.5" max="20" step="0.1" value="2" />
+              <input id="baseThicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="liftLabel">Lift over base (mm)</span>
+            <div class="range-row">
+              <input id="lift" type="range" min="0" max="5" step="0.1" value="0.2" />
+              <input id="liftValue" type="number" min="0" max="5" step="0.1" value="0.2" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span id="insetLabel">Inset depth (inverse, mm)</span>
+            <div class="range-row">
+              <input id="inset" type="range" min="0" max="10" step="0.1" value="1.0" />
+              <input id="insetValue" type="number" min="0" max="10" step="0.1" value="1.0" />
+            </div>
+          </label>
+
+          <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
+          <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
+        </details>
+      </div>
+    </main>
 
     <script type="module" src="./app.js"></script>
   </body>
