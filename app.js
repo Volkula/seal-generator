@@ -34,6 +34,8 @@ const fitBaseToEmblemBtn = document.getElementById("fitBaseToEmblemBtn");
 const fitEmblemToBaseBtn = document.getElementById("fitEmblemToBaseBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
+const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
+const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
 const statusEl = document.getElementById("status");
 
 const densityOut = document.getElementById("densityOut");
@@ -75,6 +77,9 @@ const i18n = {
     fitEmblemToBase: "Auto-fit emblem to base",
     undo: "Undo",
     redo: "Redo",
+    tabModel: "Model",
+    tabBase: "Base",
+    tabExport: "Export",
     flatView: "Flat View",
     perspectiveView: "3D View",
     statusIdle: "Load an SVG to start.",
@@ -116,6 +121,9 @@ const i18n = {
     fitEmblemToBase: "Автоподгонка эмблемы под основание",
     undo: "Отменить",
     redo: "Повторить",
+    tabModel: "Модель",
+    tabBase: "Основание",
+    tabExport: "Экспорт",
     flatView: "Плоский вид",
     perspectiveView: "3D вид",
     statusIdle: "Загрузите SVG для начала.",
@@ -161,6 +169,15 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+function setActiveTab(tab) {
+  for (const btn of tabButtons) {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  }
+  for (const panel of tabPanels) {
+    panel.classList.toggle("active", panel.dataset.panel === tab);
+  }
+}
+
 function t(key) {
   return i18n[currentLang][key];
 }
@@ -190,6 +207,9 @@ function applyLocale() {
   document.getElementById("fitEmblemToBaseBtn").textContent = t("fitEmblemToBase");
   document.getElementById("undoBtn").textContent = t("undo");
   document.getElementById("redoBtn").textContent = t("redo");
+  document.getElementById("tabModelBtn").textContent = t("tabModel");
+  document.getElementById("tabBaseBtn").textContent = t("tabBase");
+  document.getElementById("tabExportBtn").textContent = t("tabExport");
   document.getElementById("flatViewBtn").textContent = isFlatView ? t("perspectiveView") : t("flatView");
   document.getElementById("licenseNote").textContent = t("license");
   if (!svgText) {
@@ -223,7 +243,7 @@ function setFlatView(enabled) {
   isFlatView = enabled;
   controls.enableRotate = !enabled;
   if (enabled) {
-    camera.position.set(0, 0, 220);
+    camera.position.set(0, 220, 0);
     camera.up.set(0, 1, 0);
     controls.target.set(0, 0, 0);
   } else {
@@ -238,9 +258,8 @@ function makeGeneratedBaseMesh() {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
   const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, 96);
-  geometry.rotateX(Math.PI / 2);
-  // Keep base below Z=0 so emblem sits above the zero plane.
-  geometry.translate(0, 0, -thickness / 2);
+  // Y is up in this scene, keep top at Y=0.
+  geometry.translate(0, -thickness / 2, 0);
   geometry.computeVertexNormals();
   return new THREE.Mesh(
     geometry,
@@ -284,7 +303,7 @@ function composePreview() {
     const modelBox = new THREE.Box3().setFromObject(currentMesh);
     const lift = Number(liftInput.value);
     currentMesh.position.set(0, 0, 0);
-    currentMesh.position.z += baseBox.max.z + lift - modelBox.min.z;
+    currentMesh.position.y += baseBox.max.y + lift - modelBox.min.y;
     scene.add(base);
     exportCombinedBtn.disabled = false;
   } else {
@@ -454,7 +473,9 @@ function buildMesh(svg, opts) {
   const box2 = merged.boundingBox;
   const center = new THREE.Vector3();
   box2.getCenter(center);
-  merged.translate(-center.x, -center.y, -box2.min.z);
+  merged.translate(-center.x, -box2.min.y, -center.z);
+  // Lay emblem flat on XZ plane (Y-up world).
+  merged.rotateX(-Math.PI / 2);
 
   applyMirror(merged, opts.flipX, opts.flipY);
   merged.computeVertexNormals();
@@ -569,8 +590,8 @@ baseStlFileInput.addEventListener("change", async (e) => {
   const box = geometry.boundingBox;
   const center = new THREE.Vector3();
   box.getCenter(center);
-  // Keep uploaded base top face at Z=0.
-  geometry.translate(-center.x, -center.y, -box.max.z);
+  // Keep uploaded base top face at Y=0.
+  geometry.translate(-center.x, -box.max.y, -center.z);
   geometry.computeVertexNormals();
 
   if (uploadedBaseMesh) {
@@ -675,7 +696,7 @@ exportCombinedBtn.addEventListener("click", () => {
   const baseBox = new THREE.Box3().setFromObject(activeBase);
   const model = currentMesh.clone();
   const modelBox = new THREE.Box3().setFromObject(model);
-  model.position.z += baseBox.max.z + Number(liftInput.value) - modelBox.min.z;
+  model.position.y += baseBox.max.y + Number(liftInput.value) - modelBox.min.y;
   const exporter = new STLExporter();
   const combined = new THREE.Group();
   combined.add(activeBase);
@@ -751,7 +772,7 @@ fitBaseToEmblemBtn.addEventListener("click", () => {
   const box = new THREE.Box3().setFromObject(currentMesh);
   const size = new THREE.Vector3();
   box.getSize(size);
-  const targetDiameter = clampNumber(Math.ceil(Math.max(size.x, size.y) * 1.1), 10, 200);
+  const targetDiameter = clampNumber(Math.ceil(Math.max(size.x, size.z) * 1.1), 10, 200);
   baseDiameterInput.value = `${targetDiameter}`;
   baseThicknessInput.value = `${clampNumber(Number(thicknessInput.value), 0.5, 20)}`;
   generateBaseInput.checked = true;
@@ -765,7 +786,7 @@ fitEmblemToBaseBtn.addEventListener("click", () => {
     const box = new THREE.Box3().setFromObject(uploadedBaseMesh);
     const size = new THREE.Vector3();
     box.getSize(size);
-    diameter = Math.max(size.x, size.y);
+    diameter = Math.max(size.x, size.z);
   }
   sizeInput.value = `${clampNumber(Math.floor(diameter * 0.9), 10, 200)}`;
   rebuild();
@@ -785,6 +806,10 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+for (const btn of tabButtons) {
+  btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
+}
+
 function animate() {
   controls.update();
   renderer.render(scene, camera);
@@ -797,3 +822,4 @@ applyTheme("dark");
 applyLocale();
 loadFromCache();
 commitHistory();
+setActiveTab("model");

@@ -78,6 +78,34 @@ select {
   margin-bottom: 12px;
 }
 
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tab-btn {
+  margin-top: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0000002c;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.tab-btn.active {
+  background: linear-gradient(180deg, #6c4f25, #4f391a);
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
 .brand-mark {
   width: 44px;
   height: 44px;
