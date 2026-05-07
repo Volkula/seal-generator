@@ -274,7 +274,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
 transformControls.addEventListener("objectChange", () => {
   const obj = transformControls.object;
   if (!obj) return;
-  if (obj === currentBaseMesh) {
+  if (obj === currentBaseMesh || obj === currentInversePreviewMesh) {
     baseOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
     baseOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
     baseOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
@@ -520,7 +520,8 @@ function updateGizmoTarget() {
   }
   selectedObjectType = gizmoTargetInput.value === "base" ? "base" : "emblem";
   updateSelectedObjectUI();
-  const target = gizmoTargetInput.value === "base" ? currentBaseMesh : currentMesh;
+  const baseTarget = currentInversePreviewMesh || currentBaseMesh;
+  const target = gizmoTargetInput.value === "base" ? baseTarget : currentMesh;
   if (target) {
     transformControls.visible = true;
     transformControls.attach(target);
@@ -878,10 +879,10 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   ndc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(ndc, camera);
-  const candidates = [currentMesh, currentBaseMesh].filter(Boolean);
+  const candidates = [currentMesh, currentBaseMesh, currentInversePreviewMesh].filter(Boolean);
   const hit = raycaster.intersectObjects(candidates, false)[0];
   if (!hit?.object) return;
-  const pickedBase = hit.object === currentBaseMesh;
+  const pickedBase = hit.object === currentBaseMesh || hit.object === currentInversePreviewMesh;
   gizmoTargetInput.value = pickedBase ? "base" : "emblem";
   updateGizmoTarget();
 });
