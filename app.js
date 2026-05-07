@@ -1,8 +1,8 @@
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
-import { OrbitControls } from "https://unpkg.com/three@0.165.0/examples/jsm/controls/OrbitControls.js";
-import { SVGLoader } from "https://unpkg.com/three@0.165.0/examples/jsm/loaders/SVGLoader.js";
-import { STLExporter } from "https://unpkg.com/three@0.165.0/examples/jsm/exporters/STLExporter.js";
-import { mergeGeometries } from "https://unpkg.com/three@0.165.0/examples/jsm/utils/BufferGeometryUtils.js";
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
+import { STLExporter } from "three/addons/exporters/STLExporter.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
