@@ -131,6 +131,8 @@ let isApplyingHistory = false;
 const csgEvaluator = new Evaluator();
 // sanitizeGeometryForMerge strips uv/normal before merging; tell three-bvh-csg to only consume what we provide.
 csgEvaluator.attributes = ["position", "normal"];
+// We don't carry material groups — keep one solid surface so STLExporter sees a single-mesh output.
+csgEvaluator.useGroups = false;
 const gizmoModes = ["translate", "rotate", "scale"];
 let gizmoModeIndex = 0;
 let selectedObjectType = "emblem";
@@ -1176,6 +1178,15 @@ function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride 
   emblemMesh.position.x += Number(emblemOffsetXInput.value);
   emblemMesh.position.y += Number(emblemOffsetYInput.value);
   emblemMesh.position.z += Number(emblemOffsetZInput.value);
+
+  // Inverse safety: cutter top must be ≥ base top so the cut always breaks the surface
+  // (otherwise CSG produces a sealed cavity inside the disk that's invisible from outside).
+  if (inverse && baseBox) {
+    const finalEmBox = new THREE.Box3().setFromObject(emblemMesh);
+    if (finalEmBox.max.z < baseBox.max.z) {
+      emblemMesh.position.z += baseBox.max.z - finalEmBox.max.z;
+    }
+  }
 }
 
 function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null, silentLogs = false) {
@@ -1215,7 +1226,7 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
   const attempt = (extraDepth) => {
     if (!silentLogs) dlog("inverse.export.attempt.begin", { extraDepth });
     const cutWorld = cutWorldBase.clone();
-    if (extraDepth > 0) {
+    if (extraDepth !== 0) {
       cutWorld.translate(0, 0, -extraDepth);
     }
     const baseBrush = new Brush(baseWorld.clone());
@@ -1224,24 +1235,29 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
     cutBrush.updateMatrixWorld(true);
     const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
     const vertCount = subtracted?.geometry?.attributes?.position?.count || 0;
-    const resultSig = vertCount ? geometrySignature(subtracted.geometry) : null;
     if (!silentLogs) {
       dlog("inverse.export.attempt.result", {
         extraDepth,
         vertCount,
-        unchanged: resultSig ? sameSignature(baseSig, resultSig) : null,
+        baseVerts: baseSig.verts,
         resultBox: vertCount ? boxInfo(subtracted) : null,
       });
     }
     if (vertCount === 0) return null;
-    if (resultSig && sameSignature(baseSig, resultSig)) return null;
     subtracted.material = baseMesh.material.clone();
     return subtracted;
   };
 
   try {
-    // Keep fallback nudges shallow so exported cut matches user placement.
-    const result = attempt(0) || attempt(0.02) || attempt(0.06);
+    // CSG must just produce a non-empty mesh. If it's identical to the base (no overlap), that's
+    // still the right answer for the user — show the disk as-is rather than blanking the preview.
+    // Larger nudges only help boundary cases where cutter and base share a coincident face.
+    const result =
+      attempt(0) ||
+      attempt(0.01) ||
+      attempt(0.05) ||
+      attempt(0.2) ||
+      attempt(0.5);
     if (result) {
       if (!silentLogs) dlog("inverse.export.end", { success: true, method: "bvh-csg" });
       return result;
