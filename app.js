@@ -75,6 +75,7 @@ let svgText = "";
 let svgName = "model";
 let currentMesh = null;
 let currentBaseMesh = null;
+let currentInversePreviewMesh = null;
 let uploadedBaseMesh = null;
 let currentLang = "en";
 let uploadedFiles = [];
@@ -540,13 +541,27 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   baseBrush.updateMatrixWorld(true);
   const cutBrush = new Brush(cutWorld);
   cutBrush.updateMatrixWorld(true);
-  const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
-  subtracted.material = baseMesh.material.clone();
-  return subtracted;
+  try {
+    const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
+    const vertCount = subtracted?.geometry?.attributes?.position?.count || 0;
+    if (vertCount === 0) {
+      return null;
+    }
+    subtracted.material = baseMesh.material.clone();
+    return subtracted;
+  } catch (_err) {
+    return null;
+  }
 }
 
 function composePreview() {
   if (currentMesh) scene.remove(currentMesh);
+  if (currentInversePreviewMesh) {
+    scene.remove(currentInversePreviewMesh);
+    currentInversePreviewMesh.geometry?.dispose?.();
+    currentInversePreviewMesh.material?.dispose?.();
+    currentInversePreviewMesh = null;
+  }
   if (currentBaseMesh) {
     scene.remove(currentBaseMesh);
     currentBaseMesh.geometry.dispose();
@@ -570,18 +585,20 @@ function composePreview() {
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
       const previewCombined = buildCombinedMeshForExport(currentBaseMesh.clone(), currentMesh.clone());
-      setWireframe(previewCombined);
-      scene.add(previewCombined);
+      if (previewCombined) {
+        setWireframe(previewCombined);
+        scene.add(previewCombined);
+        currentInversePreviewMesh = previewCombined;
+      }
       currentMesh.material.transparent = true;
       currentMesh.material.opacity = 0.82;
       currentMesh.material.color.setHex(0xff7a59);
       currentMesh.material.emissive = new THREE.Color(0x5a1f00);
       currentMesh.material.emissiveIntensity = 0.55;
       scene.add(currentMesh);
-      scene.remove(currentBaseMesh);
-      currentBaseMesh.geometry.dispose();
-      currentBaseMesh.material.dispose();
-      currentBaseMesh = previewCombined;
+      currentBaseMesh.material.transparent = true;
+      currentBaseMesh.material.opacity = 0.18;
+      scene.add(currentBaseMesh);
     } else {
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
@@ -1173,6 +1190,10 @@ exportCombinedBtn.addEventListener("click", () => {
   const model = currentMesh.clone();
   placeEmblem(activeBase, model);
   const result = buildCombinedMeshForExport(activeBase, model);
+  if (!result) {
+    setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
+    return;
+  }
   const exporter = new STLExporter();
   const stl = exporter.parse(result, { binary: false });
   const blob = new Blob([stl], { type: "model/stl" });
