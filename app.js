@@ -313,19 +313,19 @@ function createFloatingWindows() {
   modelWindow = new WinBox({
     title: t("modelSection"),
     class: ["sg-window", "no-full", "no-max", "no-min", "no-resize"],
-    x: 272,
-    y: 10,
-    width: 250,
-    height: 560,
+    x: 276,
+    y: 44,
+    width: 236,
+    height: 610,
     mount: modelWindowContent,
   });
   baseWindow = new WinBox({
     title: t("baseSection"),
     class: ["sg-window", "no-full", "no-max", "no-min", "no-resize"],
-    x: 532,
-    y: 10,
-    width: 250,
-    height: 520,
+    x: 520,
+    y: 44,
+    width: 236,
+    height: 575,
     mount: baseWindowContent,
   });
 }
