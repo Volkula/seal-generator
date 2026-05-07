@@ -222,7 +222,7 @@ window.addEventListener("keyup", (e) => {
 
 const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setMode("translate");
-transformControls.showY = false;
+transformControls.showY = true;
 transformControls.size = 0.75;
 transformControls.addEventListener("dragging-changed", (event) => {
   controls.enabled = !event.value;
@@ -351,7 +351,7 @@ function setGizmoMode(mode) {
   const idx = gizmoModes.indexOf(mode);
   if (idx !== -1) gizmoModeIndex = idx;
   transformControls.setMode(gizmoModes[gizmoModeIndex]);
-  transformControls.showY = false;
+  transformControls.showY = true;
   updateGizmoModeButtonLabel();
 }
 
@@ -373,7 +373,7 @@ function setAxisConstraint(axis) {
 
 function resetAxisConstraint() {
   transformControls.showX = true;
-  transformControls.showY = false;
+  transformControls.showY = true;
   transformControls.showZ = true;
 }
 
@@ -489,7 +489,10 @@ function composePreview() {
       setWireframe(previewCombined);
       scene.add(previewCombined);
       currentMesh.material.transparent = true;
-      currentMesh.material.opacity = 0.35;
+      currentMesh.material.opacity = 0.82;
+      currentMesh.material.color.setHex(0xff7a59);
+      currentMesh.material.emissive = new THREE.Color(0x5a1f00);
+      currentMesh.material.emissiveIntensity = 0.55;
       scene.add(currentMesh);
       scene.remove(currentBaseMesh);
       currentBaseMesh.geometry.dispose();
@@ -498,12 +501,18 @@ function composePreview() {
     } else {
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
+      currentMesh.material.color.setHex(0x58a6ff);
+      currentMesh.material.emissive = new THREE.Color(0x000000);
+      currentMesh.material.emissiveIntensity = 0.0;
       scene.add(currentBaseMesh);
     }
     exportCombinedBtn.disabled = false;
   } else {
     currentMesh.material.transparent = false;
     currentMesh.material.opacity = 1.0;
+    currentMesh.material.color.setHex(0x58a6ff);
+    currentMesh.material.emissive = new THREE.Color(0x000000);
+    currentMesh.material.emissiveIntensity = 0.0;
     currentMesh.position.set(0, 0, 0);
     currentMesh.position.x += Number(emblemOffsetXInput.value);
     currentMesh.position.z += Number(emblemOffsetZInput.value);
@@ -1071,13 +1080,24 @@ undoBtn.addEventListener("click", () => goHistory(-1));
 redoBtn.addEventListener("click", () => goHistory(1));
 
 window.addEventListener("keydown", (e) => {
+  // Keep undo/redo higher priority than axis shortcuts.
+  if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ" && !e.shiftKey) {
+    e.preventDefault();
+    goHistory(-1);
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.code === "KeyY" || (e.shiftKey && e.code === "KeyZ"))) {
+    e.preventDefault();
+    goHistory(1);
+    return;
+  }
   if (["g", "r", "s"].includes(e.key.toLowerCase())) {
     const mode = e.key.toLowerCase() === "g" ? "translate" : e.key.toLowerCase() === "r" ? "rotate" : "scale";
     setGizmoMode(mode);
     commitHistory();
     return;
   }
-  if (["x", "y", "z"].includes(e.key.toLowerCase())) {
+  if (!e.ctrlKey && !e.metaKey && ["x", "y", "z"].includes(e.key.toLowerCase())) {
     setAxisConstraint(e.key.toLowerCase());
     return;
   }
@@ -1111,13 +1131,7 @@ window.addEventListener("keydown", (e) => {
     focusView("z", e.ctrlKey ? -1 : 1);
     return;
   }
-  if (e.ctrlKey && e.key.toLowerCase() === "z" && !e.shiftKey) {
-    e.preventDefault();
-    goHistory(-1);
-  } else if ((e.ctrlKey && e.key.toLowerCase() === "y") || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "z")) {
-    e.preventDefault();
-    goHistory(1);
-  }
+  // Undo/redo handled above.
 });
 
 function animate() {
@@ -1131,6 +1145,7 @@ refreshOutputs();
 applyTheme("dark");
 document.body.dataset.sidebar = "left";
 setGizmoMode("translate");
+gizmoEnabledInput.checked = true;
 applyLocale();
 loadFromCache();
 commitHistory();
