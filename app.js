@@ -1216,7 +1216,11 @@ exportCombinedBtn.addEventListener("click", () => {
   );
   const model = currentMesh.clone();
   placeEmblem(activeBase, model);
-  const result = buildCombinedMeshForExport(activeBase, model);
+  let result = buildCombinedMeshForExport(activeBase, model);
+  if (!result && inverseModeInput.checked && currentInversePreviewMesh) {
+    // Fallback: reuse the already computed inverse preview geometry.
+    result = currentInversePreviewMesh.clone();
+  }
   if (!result) {
     setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
     return;
