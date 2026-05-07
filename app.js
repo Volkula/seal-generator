@@ -203,6 +203,22 @@ viewport.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 0, 0);
+// Blender-like navigation: MMB orbit, Shift+MMB pan, wheel zoom.
+controls.mouseButtons = {
+  LEFT: null,
+  MIDDLE: THREE.MOUSE.ROTATE,
+  RIGHT: THREE.MOUSE.PAN,
+};
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Shift") {
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+  }
+});
+window.addEventListener("keyup", (e) => {
+  if (e.key === "Shift") {
+    controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+  }
+});
 
 const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setMode("translate");
@@ -337,6 +353,28 @@ function setGizmoMode(mode) {
   transformControls.setMode(gizmoModes[gizmoModeIndex]);
   transformControls.showY = false;
   updateGizmoModeButtonLabel();
+}
+
+function focusView(axis, sign = 1) {
+  const dist = camera.position.distanceTo(controls.target) || 220;
+  const p = controls.target.clone();
+  if (axis === "x") camera.position.set(p.x + sign * dist, p.y, p.z);
+  if (axis === "y") camera.position.set(p.x, p.y + sign * dist, p.z);
+  if (axis === "z") camera.position.set(p.x, p.y, p.z + sign * dist);
+  camera.lookAt(p);
+  controls.update();
+}
+
+function setAxisConstraint(axis) {
+  transformControls.showX = axis === "x";
+  transformControls.showY = axis === "y";
+  transformControls.showZ = axis === "z";
+}
+
+function resetAxisConstraint() {
+  transformControls.showX = true;
+  transformControls.showY = false;
+  transformControls.showZ = true;
 }
 
 function makeGeneratedBaseMesh() {
@@ -1033,6 +1071,46 @@ undoBtn.addEventListener("click", () => goHistory(-1));
 redoBtn.addEventListener("click", () => goHistory(1));
 
 window.addEventListener("keydown", (e) => {
+  if (["g", "r", "s"].includes(e.key.toLowerCase())) {
+    const mode = e.key.toLowerCase() === "g" ? "translate" : e.key.toLowerCase() === "r" ? "rotate" : "scale";
+    setGizmoMode(mode);
+    commitHistory();
+    return;
+  }
+  if (["x", "y", "z"].includes(e.key.toLowerCase())) {
+    setAxisConstraint(e.key.toLowerCase());
+    return;
+  }
+  if (e.key === "Escape") {
+    resetAxisConstraint();
+    transformControls.detach();
+    updateGizmoTarget();
+    return;
+  }
+  if (e.key === "1") {
+    focusView("y", e.ctrlKey ? -1 : 1);
+    return;
+  }
+  if (e.key === "3") {
+    focusView("x", e.ctrlKey ? -1 : 1);
+    return;
+  }
+  if (e.key === "7") {
+    focusView("z", e.ctrlKey ? -1 : 1);
+    return;
+  }
+  if (e.code === "Numpad1") {
+    focusView("y", e.ctrlKey ? -1 : 1);
+    return;
+  }
+  if (e.code === "Numpad3") {
+    focusView("x", e.ctrlKey ? -1 : 1);
+    return;
+  }
+  if (e.code === "Numpad7") {
+    focusView("z", e.ctrlKey ? -1 : 1);
+    return;
+  }
   if (e.ctrlKey && e.key.toLowerCase() === "z" && !e.shiftKey) {
     e.preventDefault();
     goHistory(-1);
