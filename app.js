@@ -388,11 +388,16 @@ const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setMode("translate");
 transformControls.showY = true;
 transformControls.size = 0.75;
+/** Tracks gizmo positions at drag start so the CSG preview can be slid by the drag delta in real time. */
+const _gizmoDragStartBasePos = new THREE.Vector3();
+const _gizmoDragStartInversePreviewPos = new THREE.Vector3();
 transformControls.addEventListener("dragging-changed", (event) => {
   controls.enabled = !event.value;
   const o = transformControls.object;
-  if (
-    !event.value &&
+  if (event.value) {
+    if (o === currentBaseMesh) _gizmoDragStartBasePos.copy(o.position);
+    if (currentInversePreviewMesh) _gizmoDragStartInversePreviewPos.copy(currentInversePreviewMesh.position);
+  } else if (
     inverseModeInput.checked &&
     currentMesh &&
     currentBaseMesh &&
@@ -412,6 +417,13 @@ transformControls.addEventListener("objectChange", () => {
     baseOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
     baseOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
     baseOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
+    if (inverseModeInput.checked && currentInversePreviewMesh) {
+      currentInversePreviewMesh.position.set(
+        _gizmoDragStartInversePreviewPos.x + (obj.position.x - _gizmoDragStartBasePos.x),
+        _gizmoDragStartInversePreviewPos.y + (obj.position.y - _gizmoDragStartBasePos.y),
+        _gizmoDragStartInversePreviewPos.z + (obj.position.z - _gizmoDragStartBasePos.z)
+      );
+    }
   } else if (obj === currentMesh) {
     emblemGizmoEuler.copy(obj.rotation);
     emblemGizmoScale.copy(obj.scale);
@@ -425,9 +437,6 @@ transformControls.addEventListener("objectChange", () => {
     }
   }
   refreshOutputs();
-  if (inverseModeInput.checked && currentMesh && currentBaseMesh && (obj === currentMesh || obj === currentBaseMesh)) {
-    scheduleRebuildInverseCombinedMesh();
-  }
 });
 transformControls.addEventListener("mouseUp", () => {
   // Don't rebuild here: rebuild recreates meshes and resets gizmo scale/rotation.
@@ -1050,21 +1059,17 @@ function applyBaseOpaqueVisual(root) {
   });
 }
 
-/** In inverse mode: faint visible disk + STL for spatial reference (CSG carve draws above). */
+/** Inverse mode: base group stays in graph (for gizmo) but invisible — CSG preview is the visible result. */
 function applyInverseModeBaseReferenceVisual(root) {
   if (!root) return;
+  root.visible = false;
+}
+
+/** Inverse mode preview rebuild failed — fall back to opaque base so something is rendered. */
+function applyInverseModeBaseFallbackVisual(root) {
+  if (!root) return;
   root.visible = true;
-  root.traverse((child) => {
-    if (!child.isMesh || !child.material) return;
-    const mats = Array.isArray(child.material) ? child.material : [child.material];
-    for (const m of mats) {
-      m.transparent = true;
-      m.opacity = 0.16;
-      m.depthWrite = false;
-      m.needsUpdate = true;
-      child.renderOrder = 0;
-    }
-  });
+  applyBaseOpaqueVisual(root);
 }
 
 function setWireframe(mesh) {
@@ -1087,7 +1092,7 @@ function updateGizmoTarget() {
   /** Always manipulate the composed base group; inverse CSG preview is display-only for export/visual. */
   const baseTarget = currentBaseMesh;
   const target = isBaseTarget ? baseTarget : currentMesh;
-  // In inverse mode, hide cutter mesh while editing base to avoid ghost-like overlay.
+  // Inverse mode: show the emblem-cutter only while it's the gizmo target (drag preview); CSG preview shows the carved result.
   if (inverseModeInput.checked && currentMesh) {
     currentMesh.visible = !isBaseTarget;
   } else if (currentMesh) {
@@ -1271,41 +1276,93 @@ function disposeCurrentInversePreviewMesh() {
   currentInversePreviewMesh = null;
 }
 
+function disposeInversePreviewCutterMeshOnly() {
+  if (!inversePreviewCutterMesh) return;
+  inversePreviewCutterMesh.geometry?.dispose?.();
+  inversePreviewCutterMesh.material?.dispose?.();
+  inversePreviewCutterMesh = null;
+}
+
+function clearInversePreviewCutterState() {
+  disposeInversePreviewCutterMeshOnly();
+  inversePreviewCutterCacheKey = "";
+}
+
 /**
- * Recompute inverse-mode CSG preview from live emblem/base meshes (called after gizmo moves emblem).
+ * Build a capped-curveSegments emblem used only as the CSG cutter for fast inverse preview.
+ * Export still uses the full-density currentMesh.
  */
+function syncInversePreviewCutterTemplate(opts) {
+  const cappedDensity = Math.min(INVERSE_PREVIEW_CURVE_SEGMENTS_CAP, opts.density);
+  const key = [
+    quickStringFingerprint(svgText),
+    opts.targetSize,
+    opts.thickness,
+    opts.scaleX,
+    opts.scaleY,
+    opts.scaleZ,
+    cappedDensity,
+    opts.autoFix ? 1 : 0,
+    opts.flipX ? 1 : 0,
+    opts.flipY ? 1 : 0,
+  ].join("|");
+
+  if (key === inversePreviewCutterCacheKey) return;
+
+  disposeInversePreviewCutterMeshOnly();
+  inversePreviewCutterCacheKey = key;
+
+  // No win caching when source already small enough; fall back to currentMesh in rebuildInverseCombinedMesh.
+  if (opts.density <= INVERSE_PREVIEW_CURVE_SEGMENTS_CAP) return;
+
+  try {
+    const { mesh: previewCutter } = buildMesh(svgText, { ...opts, density: cappedDensity });
+    inversePreviewCutterMesh = previewCutter;
+  } catch (_e) {
+    inversePreviewCutterMesh = null;
+  }
+}
+
+/** Recompute inverse-mode CSG preview from live emblem/base meshes. */
 function rebuildInverseCombinedMesh(options = {}) {
   const skipGizmoUpdate = !!options.skipGizmoUpdate;
   if (!inverseModeInput.checked || !currentMesh || !currentBaseMesh) return;
   transformControls.detach();
   disposeCurrentInversePreviewMesh();
+
   const flatBase = flattenObject3DToSingleMesh(currentBaseMesh);
   if (!flatBase) {
+    applyInverseModeBaseFallbackVisual(currentBaseMesh);
     if (!skipGizmoUpdate) updateGizmoTarget();
     return;
   }
-  const previewCutter = inversePreviewCutterMesh ? inversePreviewCutterMesh.clone(true) : currentMesh.clone();
+
+  const cutterTemplate = inversePreviewCutterMesh || currentMesh;
+  const previewCutter = cutterTemplate === currentMesh ? currentMesh.clone() : cutterTemplate.clone(true);
   previewCutter.position.copy(currentMesh.position);
   previewCutter.rotation.copy(currentMesh.rotation);
   previewCutter.scale.copy(currentMesh.scale);
   previewCutter.updateMatrixWorld(true);
 
-  let previewCombined;
+  let previewCombined = null;
   try {
     previewCombined = buildCombinedMeshForExport(flatBase, previewCutter, null, true);
   } finally {
     flatBase.geometry.dispose();
     flatBase.material.dispose();
-    if (inversePreviewCutterMesh) {
-      previewCutter.geometry.dispose();
-      previewCutter.material.dispose();
+    if (cutterTemplate === inversePreviewCutterMesh) {
+      previewCutter.geometry.dispose?.();
+      previewCutter.material?.dispose?.();
     }
   }
 
   if (!previewCombined) {
+    applyInverseModeBaseFallbackVisual(currentBaseMesh);
     if (!skipGizmoUpdate) updateGizmoTarget();
     return;
   }
+
+  applyInverseModeBaseReferenceVisual(currentBaseMesh);
   setWireframe(previewCombined);
   previewCombined.renderOrder = 10;
   scene.add(previewCombined);
@@ -1355,21 +1412,26 @@ function composePreview() {
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
       scene.add(currentBaseMesh);
-      applyInverseModeBaseReferenceVisual(currentBaseMesh);
-      rebuildInverseCombinedMesh({ skipGizmoUpdate: true });
-      currentMesh.material.transparent = false;
-      currentMesh.material.opacity = 1.0;
-      currentMesh.material.color.setHex(0xff7a59);
-      currentMesh.material.emissive = new THREE.Color(0x5a1f00);
-      currentMesh.material.emissiveIntensity = 0.55;
+      currentMesh.material.transparent = true;
+      currentMesh.material.opacity = 0.55;
+      currentMesh.material.color.setHex(0xff5a3c);
+      currentMesh.material.emissive = new THREE.Color(0x401000);
+      currentMesh.material.emissiveIntensity = 0.65;
+      currentMesh.material.depthWrite = false;
+      currentMesh.material.needsUpdate = true;
+      currentMesh.renderOrder = 5;
       currentMesh.visible = false;
-
+      // Build CSG preview now; it replaces the source base visually. Falls back to opaque base if it fails.
+      rebuildInverseCombinedMesh({ skipGizmoUpdate: true });
     } else {
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
       currentMesh.material.color.setHex(0x58a6ff);
       currentMesh.material.emissive = new THREE.Color(0x000000);
       currentMesh.material.emissiveIntensity = 0.0;
+      currentMesh.material.depthWrite = true;
+      currentMesh.material.needsUpdate = true;
+      currentMesh.renderOrder = 0;
       scene.add(currentBaseMesh);
     }
     exportCombinedBtn.disabled = false;
@@ -1752,62 +1814,6 @@ function quickStringFingerprint(s) {
     h = (h * 33 + s.charCodeAt(i)) | 0;
   }
   return `${s.length}_${h}`;
-}
-
-function disposeInversePreviewCutterMeshOnly() {
-  if (!inversePreviewCutterMesh) return;
-  inversePreviewCutterMesh.geometry?.dispose?.();
-  inversePreviewCutterMesh.material?.dispose?.();
-  inversePreviewCutterMesh = null;
-}
-
-function clearInversePreviewCutterState() {
-  disposeInversePreviewCutterMeshOnly();
-  inversePreviewCutterCacheKey = "";
-}
-
-/**
- * Keep a capped `curveSegments` emblem mesh used only as the CSG cutter in inverse preview — export still uses full-density `currentMesh`.
- * Skips rebuilding when unrelated sliders (lift, emblem offsets…) trigger `rebuild()`.
- */
-function syncInversePreviewCutterTemplate(opts) {
-  const cappedDensity = Math.min(INVERSE_PREVIEW_CURVE_SEGMENTS_CAP, opts.density);
-  const key = [
-    quickStringFingerprint(svgText),
-    opts.targetSize,
-    opts.thickness,
-    opts.scaleX,
-    opts.scaleY,
-    opts.scaleZ,
-    cappedDensity,
-    opts.autoFix ? 1 : 0,
-    opts.flipX ? 1 : 0,
-    opts.flipY ? 1 : 0,
-  ].join("|");
-
-  if (key === inversePreviewCutterCacheKey) {
-    if (inversePreviewCutterMesh) {
-      inversePreviewCutterMesh.rotation.copy(emblemGizmoEuler);
-      inversePreviewCutterMesh.scale.copy(emblemGizmoScale);
-    }
-    return;
-  }
-
-  disposeInversePreviewCutterMeshOnly();
-  inversePreviewCutterCacheKey = key;
-
-  if (opts.density <= INVERSE_PREVIEW_CURVE_SEGMENTS_CAP) {
-    return;
-  }
-
-  try {
-    const { mesh: previewCutter } = buildMesh(svgText, { ...opts, density: cappedDensity });
-    previewCutter.rotation.copy(emblemGizmoEuler);
-    previewCutter.scale.copy(emblemGizmoScale);
-    inversePreviewCutterMesh = previewCutter;
-  } catch (_e) {
-    inversePreviewCutterMesh = null;
-  }
 }
 
 function rebuild() {
