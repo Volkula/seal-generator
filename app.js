@@ -88,7 +88,10 @@ const batchAddLibraryBtn = document.getElementById("batchAddLibraryBtn");
 const libraryPreviewModal = document.getElementById("libraryPreviewModal");
 const libraryPreviewTitle = document.getElementById("libraryPreviewTitle");
 const libraryPreviewMeta = document.getElementById("libraryPreviewMeta");
-const libraryPreviewImg = document.getElementById("libraryPreviewImg");
+const libraryCategoryList = document.getElementById("libraryCategoryList");
+const librarySvgGrid = document.getElementById("librarySvgGrid");
+const libraryPreviewPrimaryBtn = document.getElementById("libraryPreviewPrimaryBtn");
+const libraryPreviewCancelBtn = document.getElementById("libraryPreviewCancelBtn");
 const libraryPreviewCloseBtn = document.getElementById("libraryPreviewCloseBtn");
 
 const densityOut = document.getElementById("densityOut");
@@ -103,6 +106,9 @@ let currentLang = "en";
 let uploadedFiles = [];
 let batchFiles = [];
 let libraryManifest = [];
+let libraryBrowserMode = "single";
+let libraryBrowserCategory = "";
+let libraryBrowserSelectedPath = "";
 let isFlatView = false;
 let history = [];
 let historyIndex = -1;
@@ -125,7 +131,12 @@ const i18n = {
     sidebarSide: "Sidebar",
     libraryCategory: "Library category",
     librarySingle: "Library SVG (single)",
-    previewSelected: "Preview selected",
+    previewSelected: "Open library browser",
+    libraryBrowserTitle: "Library Browser",
+    libraryBrowserCategory: "Library Category",
+    libraryBrowserLoad: "Load selected",
+    libraryBrowserAdd: "Add to batch",
+    cancel: "Cancel",
     loadFromLibrary: "Load from library",
     batchLibrary: "Library SVG (multiple)",
     batchAddLibrary: "Add selected from library",
@@ -208,7 +219,12 @@ const i18n = {
     sidebarSide: "Сайдбар",
     libraryCategory: "Категория библиотеки",
     librarySingle: "SVG из библиотеки (один)",
-    previewSelected: "Предпросмотр выбранного",
+    previewSelected: "Открыть библиотеку",
+    libraryBrowserTitle: "Библиотека",
+    libraryBrowserCategory: "Категория библиотеки",
+    libraryBrowserLoad: "Загрузить выбранный",
+    libraryBrowserAdd: "Добавить в batch",
+    cancel: "Отмена",
     loadFromLibrary: "Загрузить из библиотеки",
     batchLibrary: "SVG из библиотеки (несколько)",
     batchAddLibrary: "Добавить выбранные из библиотеки",
@@ -504,20 +520,50 @@ function closeLibraryPreview() {
   libraryPreviewModal.classList.add("hidden");
 }
 
-async function openLibraryPreview(path) {
-  if (!path) return;
-  try {
-    const response = await fetch(path);
-    if (!response.ok) throw new Error("preview fetch failed");
-    const svgRaw = await response.text();
-    const item = libraryManifest.find((x) => x.path === path);
-    libraryPreviewTitle.textContent = item?.name || t("previewSelected");
-    libraryPreviewMeta.textContent = `${item?.category || ""}`;
-    libraryPreviewImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgRaw)}`;
-    libraryPreviewModal.classList.remove("hidden");
-  } catch (_err) {
-    setStatus(`${t("statusError")}: library preview load failed`);
+function renderLibraryBrowser() {
+  const categories = [...new Set(libraryManifest.map((item) => item.category))].sort((a, b) => a.localeCompare(b));
+  if (!libraryBrowserCategory && categories.length) libraryBrowserCategory = categories[0];
+  libraryCategoryList.innerHTML = "";
+  for (const category of categories) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `library-cat-btn${category === libraryBrowserCategory ? " active" : ""}`;
+    btn.textContent = category;
+    btn.addEventListener("click", () => {
+      libraryBrowserCategory = category;
+      libraryBrowserSelectedPath = "";
+      renderLibraryBrowser();
+    });
+    libraryCategoryList.appendChild(btn);
   }
+  const filtered = libraryManifest.filter((x) => x.category === libraryBrowserCategory);
+  librarySvgGrid.innerHTML = "";
+  for (const item of filtered) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `library-card${libraryBrowserSelectedPath === item.path ? " active" : ""}`;
+    card.innerHTML = `
+      <div class="library-thumb"><img src="${item.path}" alt="${item.name}"></div>
+      <div class="library-name">${item.name}</div>
+    `;
+    card.addEventListener("click", () => {
+      libraryBrowserSelectedPath = item.path;
+      renderLibraryBrowser();
+    });
+    librarySvgGrid.appendChild(card);
+  }
+}
+
+function openLibraryPreview(mode) {
+  libraryBrowserMode = mode;
+  libraryPreviewTitle.textContent = t("libraryBrowserTitle");
+  libraryPreviewMeta.textContent = t("libraryBrowserCategory");
+  libraryPreviewPrimaryBtn.textContent = mode === "single" ? t("libraryBrowserLoad") : t("libraryBrowserAdd");
+  libraryPreviewCancelBtn.textContent = t("cancel");
+  libraryBrowserSelectedPath = mode === "single" ? librarySingleInput.value : batchLibraryListInput.selectedOptions?.[0]?.value || "";
+  libraryBrowserCategory = libraryManifest.find((x) => x.path === libraryBrowserSelectedPath)?.category || libraryCategoryInput.value;
+  renderLibraryBrowser();
+  libraryPreviewModal.classList.remove("hidden");
 }
 
 async function loadLibraryManifest() {
@@ -1658,8 +1704,7 @@ batchExportBtn.addEventListener("click", () => exportZipBtn.click());
 
 libraryCategoryInput.addEventListener("change", updateLibraryItemLists);
 
-libraryLoadSingleBtn.addEventListener("click", async () => {
-  const selectedPath = librarySingleInput.value;
+async function loadLibrarySvgToSingle(selectedPath) {
   if (!selectedPath) return;
   try {
     const response = await fetch(selectedPath);
@@ -1672,14 +1717,16 @@ libraryLoadSingleBtn.addEventListener("click", async () => {
   } catch (_err) {
     setStatus(`${t("statusError")}: library svg load failed`);
   }
+}
+
+libraryLoadSingleBtn.addEventListener("click", async () => {
+  await loadLibrarySvgToSingle(librarySingleInput.value);
 });
 
-libraryPreviewBtn.addEventListener("click", () => openLibraryPreview(librarySingleInput.value));
+libraryPreviewBtn.addEventListener("click", () => openLibraryPreview("single"));
 
 batchPreviewBtn.addEventListener("click", () => {
-  const firstSelected = batchLibraryListInput.selectedOptions?.[0];
-  if (!firstSelected) return;
-  openLibraryPreview(firstSelected.value);
+  openLibraryPreview("batch");
 });
 
 batchAddLibraryBtn.addEventListener("click", async () => {
@@ -1701,6 +1748,28 @@ batchAddLibraryBtn.addEventListener("click", async () => {
   setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
 });
 
+libraryPreviewPrimaryBtn.addEventListener("click", async () => {
+  if (!libraryBrowserSelectedPath) return;
+  if (libraryBrowserMode === "single") {
+    await loadLibrarySvgToSingle(libraryBrowserSelectedPath);
+    closeLibraryPreview();
+    return;
+  }
+  try {
+    const response = await fetch(libraryBrowserSelectedPath);
+    if (!response.ok) throw new Error("batch library add failed");
+    const text = await response.text();
+    const name = libraryBrowserSelectedPath.split("/").pop();
+    batchFiles = [...batchFiles, makeVirtualBatchFile(name, text)];
+    updateBatchButtonState();
+    setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
+    closeLibraryPreview();
+  } catch (_err) {
+    setStatus(`${t("statusError")}: library svg load failed`);
+  }
+});
+
+libraryPreviewCancelBtn.addEventListener("click", closeLibraryPreview);
 libraryPreviewCloseBtn.addEventListener("click", closeLibraryPreview);
 libraryPreviewModal.addEventListener("click", (e) => {
   if (e.target === libraryPreviewModal) closeLibraryPreview();
