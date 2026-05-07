@@ -312,7 +312,7 @@ function createFloatingWindows() {
   if (typeof WinBox === "undefined" || !modelWindowContent || !baseWindowContent) return;
   modelWindow = new WinBox({
     title: t("modelSection"),
-    class: ["sg-window", "no-full", "no-max", "no-min", "no-resize"],
+    class: "sg-window",
     x: 276,
     y: 44,
     width: 236,
@@ -321,7 +321,7 @@ function createFloatingWindows() {
   });
   baseWindow = new WinBox({
     title: t("baseSection"),
-    class: ["sg-window", "no-full", "no-max", "no-min", "no-resize"],
+    class: "sg-window",
     x: 520,
     y: 44,
     width: 236,

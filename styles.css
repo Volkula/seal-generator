@@ -319,19 +319,57 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.winbox.sg-window,
 .wb.sg-window {
   border: 1px solid var(--line);
   box-shadow: 0 10px 24px #00000055;
 }
 
+.winbox.sg-window .wb-header,
 .wb.sg-window .wb-header {
   background: linear-gradient(180deg, #1f2634, #131926);
   color: var(--text);
 }
 
+.winbox.sg-window .wb-body,
 .wb.sg-window .wb-body {
   background: linear-gradient(180deg, #12131af0, #181a23f0);
   backdrop-filter: blur(3px);
+  color: var(--text);
+}
+
+.winbox.sg-window .wb-body .field > span,
+.winbox.sg-window .wb-body .hint,
+.winbox.sg-window .wb-body .field > label,
+.wb.sg-window .wb-body .field > span,
+.wb.sg-window .wb-body .hint,
+.wb.sg-window .wb-body .field > label {
+  color: var(--text);
+}
+
+.winbox.sg-window .wb-body input[type="number"],
+.winbox.sg-window .wb-body select,
+.wb.sg-window .wb-body input[type="number"],
+.wb.sg-window .wb-body select {
+  background: #0f1320;
+  border-color: #2b344b;
+  color: #f5f7ff;
+}
+
+.winbox.sg-window .wb-body input[type="file"],
+.wb.sg-window .wb-body input[type="file"] {
+  border-color: #424b61;
+  background: #0d101a;
+}
+
+.winbox.sg-window .wb-body button,
+.wb.sg-window .wb-body button {
+  border-radius: 8px;
+}
+
+.winbox.sg-window .wb-body .floating-content h3,
+.wb.sg-window .wb-body .floating-content h3 {
+  margin-top: 2px;
 }
 
 @media (max-width: 1280px) {
