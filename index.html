@@ -234,14 +234,9 @@
 
       <section id="baseWindowContent" class="floating-content">
           <h3 id="baseSectionLabel">Base</h3>
-          <label class="field">
-            <span id="baseStlLabel">Base STL (optional)</span>
-            <input id="baseStlFile" type="file" accept=".stl,model/stl" />
-          </label>
-
           <label class="field checkbox">
             <input id="generateBase" type="checkbox" />
-            <span id="generateBaseLabel">Generate round base</span>
+            <span id="generateBaseLabel">Generate round disk base</span>
           </label>
 
           <label class="field">
@@ -259,6 +254,12 @@
               <input id="baseThicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
             </div>
           </label>
+
+          <label class="field">
+            <span id="baseStlLabel">Extra base STL (add-on)</span>
+            <input id="baseStlFile" type="file" accept=".stl,model/stl" />
+          </label>
+          <p class="hint" id="baseStlHint">Stacked under the round disk when both are on; alone if only STL is loaded.</p>
 
           <label class="field">
             <span id="liftLabel">Lift over base (mm)</span>

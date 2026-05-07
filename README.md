@@ -17,7 +17,7 @@ Browser SVG → STL converter with live 3D preview, draggable control windows, o
 - Size, thickness, line density (curve detail), XYZ scale sliders.
 - Auto-fix unclosed SVG subpaths before extrusion.
 - Flip horizontally and vertically.
-- Load a **STL** base or generate a **round** base (diameter/thickness).
+- Load a **STL** base or generate a **round** base (diameter/thickness), or **both** (STL is stacked under the disk as an add-on).
 - **Auto-fit** base to emblem / emblem to base.
 - **Fit margin** — configurable inward margin when fitting emblem width to base (percentage from edge of base diameter; useful with rotated emblems).
 

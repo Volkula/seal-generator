@@ -160,8 +160,10 @@ const i18n = {
     batchSelection: "Selected batch items",
     batchClearSelection: "Clear selected",
     svgFile: "SVG file",
-    baseStl: "Base STL (optional)",
-    generateBase: "Generate round base",
+    baseStl: "Extra STL (under disk)",
+    baseStlHint:
+      "Stacked below the disk when both are enabled. If disk is off, only the STL defines the base.",
+    generateBase: "Generate round disk base",
     baseDiameter: "Base diameter (mm)",
     baseThickness: "Base thickness (mm)",
     size: "Size (max dimension, mm)",
@@ -251,8 +253,10 @@ const i18n = {
     batchSelection: "Выбранные batch элементы",
     batchClearSelection: "Очистить выбранные",
     svgFile: "SVG файл",
-    baseStl: "Основание STL (опционально)",
-    generateBase: "Сгенерировать круглое основание",
+    baseStl: "Доп. STL (под диск)",
+    baseStlHint:
+      "Под диском, если включены оба; если диск выключен — только STL как база.",
+    generateBase: "Круглый диск (основа)",
     baseDiameter: "Диаметр основания (мм)",
     baseThickness: "Толщина основания (мм)",
     size: "Размер (макс. габарит, мм)",
@@ -741,6 +745,7 @@ function applyLocale() {
   document.getElementById("svgFileLabel").textContent = t("svgFile");
   document.getElementById("batchSvgLabel").textContent = t("batchSvg");
   document.getElementById("baseStlLabel").textContent = t("baseStl");
+  document.getElementById("baseStlHint").textContent = t("baseStlHint");
   document.getElementById("generateBaseLabel").textContent = t("generateBase");
   document.getElementById("baseDiameterLabel").textContent = t("baseDiameter");
   document.getElementById("baseThicknessLabel").textContent = t("baseThickness");
@@ -883,19 +888,106 @@ function makeGeneratedBaseMesh() {
   );
 }
 
-function getActiveBaseMesh() {
-  if (generateBaseInput.checked) {
-    return makeGeneratedBaseMesh();
+/** Dispose geometries/materials owned by Object3D (Mesh or Group). */
+function disposeObjectGeometryTree(obj) {
+  if (!obj) return;
+  obj.traverse((child) => {
+    child.geometry?.dispose?.();
+    if (child.material) {
+      const arr = Array.isArray(child.material) ? child.material : [child.material];
+      arr.forEach((m) => m.dispose?.());
+    }
+  });
+}
+
+/** Merge meshes under root into one world-space mesh for CSG / STL export path. Caller disposes returned mesh after use unless kept in scene. */
+function flattenObject3DToSingleMesh(sourceRoot, materialFallback = null) {
+  sourceRoot?.updateMatrixWorld(true);
+  const geoms = [];
+  let pickedMat = materialFallback;
+  sourceRoot?.traverse?.((child) => {
+    if (child.isMesh && child.geometry) {
+      child.updateMatrixWorld(true);
+      geoms.push(child.geometry.clone().applyMatrix4(child.matrixWorld));
+      if (!pickedMat && child.material) pickedMat = child.material.clone();
+    }
+  });
+  if (!geoms.length) return null;
+  const merged = geoms.length === 1 ? geoms[0] : mergeGeometries(geoms, false);
+  merged.computeVertexNormals();
+  const mesh = new THREE.Mesh(
+    merged,
+    pickedMat ||
+      new THREE.MeshStandardMaterial({
+        color: 0x8b8b8b,
+        metalness: 0.25,
+        roughness: 0.75,
+      })
+  );
+  mesh.position.set(0, 0, 0);
+  mesh.rotation.set(0, 0, 0);
+  mesh.scale.set(1, 1, 1);
+  return mesh;
+}
+
+/**
+ * Compose scene base root: disk (optional) + extra STL under it (optional). Both can coexist.
+ * Applies base offset sliders on returned Group root.
+ */
+function buildComposableBaseRoot(options = {}) {
+  const omitBaseOffset = !!options.omitBaseOffset;
+  const hasCyl = generateBaseInput.checked;
+  const hasStl = !!uploadedBaseMesh;
+  if (!hasCyl && !hasStl) return null;
+  const group = new THREE.Group();
+  group.name = "composedBase";
+  /** @type {THREE.Mesh|null} */
+  let cyl = null;
+  /** @type {THREE.Mesh|null} */
+  let stl = null;
+  if (hasCyl) {
+    cyl = makeGeneratedBaseMesh();
+    group.add(cyl);
   }
-  if (uploadedBaseMesh) {
-    return uploadedBaseMesh.clone();
+  if (hasStl) {
+    stl = uploadedBaseMesh.clone();
+    if (hasCyl) {
+      const cyBox = new THREE.Box3().setFromObject(cyl);
+      const stBox = new THREE.Box3().setFromObject(stl);
+      stl.position.z = cyBox.min.z - stBox.max.z;
+    }
+    group.add(stl);
   }
-  return null;
+  if (omitBaseOffset) {
+    group.position.set(0, 0, 0);
+  } else {
+    group.position.set(Number(baseOffsetXInput.value), Number(baseOffsetYInput.value), Number(baseOffsetZInput.value));
+  }
+  group.updateMatrixWorld(true);
+  return group;
+}
+
+/** Fallback for batch / probing when compose returns null — single procedural disk at origin */
+function proceduralDiskOnlyRoot() {
+  const g = new THREE.Group();
+  g.add(makeGeneratedBaseMesh());
+  return g;
+}
+
+function applyBaseOpaqueVisual(root) {
+  root?.traverse?.((child) => {
+    if (!child.material) return;
+    child.material.transparent = false;
+    child.material.opacity = 0.95;
+  });
 }
 
 function setWireframe(mesh) {
-  if (!mesh?.material) return;
-  mesh.material.wireframe = wireframeModeInput.checked;
+  if (!mesh?.traverse) return;
+  mesh.traverse((child) => {
+    if (!child.material) return;
+    child.material.wireframe = wireframeModeInput.checked;
+  });
 }
 
 function updateGizmoTarget() {
@@ -1055,12 +1147,17 @@ function cloneMeshInWorldSpace(mesh) {
 }
 
 function getEffectiveBaseDiameterXY() {
-  const baseProbe = getActiveBaseMesh() || makeGeneratedBaseMesh();
-  const box = new THREE.Box3().setFromObject(baseProbe);
+  const composite = buildComposableBaseRoot();
+  const cylinderFallback = composite ? null : makeGeneratedBaseMesh();
+  const probeObj = composite || cylinderFallback;
+  const box = new THREE.Box3().setFromObject(probeObj);
   const size = new THREE.Vector3();
   box.getSize(size);
-  baseProbe.geometry?.dispose?.();
-  baseProbe.material?.dispose?.();
+  if (composite) disposeObjectGeometryTree(composite);
+  if (cylinderFallback) {
+    cylinderFallback.geometry.dispose();
+    cylinderFallback.material.dispose();
+  }
   return Math.max(size.x, size.y, 1e-6);
 }
 
@@ -1096,7 +1193,11 @@ function rebuildInverseCombinedMesh(options = {}) {
   const skipGizmoUpdate = !!options.skipGizmoUpdate;
   if (!inverseModeInput.checked || !currentMesh || !currentBaseMesh) return;
   disposeCurrentInversePreviewMesh();
-  const previewCombined = buildCombinedMeshForExport(currentBaseMesh.clone(), currentMesh.clone());
+  const flatBase = flattenObject3DToSingleMesh(currentBaseMesh);
+  if (!flatBase) return;
+  const previewCombined = buildCombinedMeshForExport(flatBase, currentMesh.clone());
+  flatBase.geometry.dispose();
+  flatBase.material.dispose();
   if (!previewCombined) return;
   setWireframe(previewCombined);
   scene.add(previewCombined);
@@ -1123,21 +1224,14 @@ function composePreview() {
   }
   if (currentBaseMesh) {
     scene.remove(currentBaseMesh);
-    currentBaseMesh.geometry.dispose();
-    currentBaseMesh.material.dispose();
+    disposeObjectGeometryTree(currentBaseMesh);
     currentBaseMesh = null;
   }
-  const base = getActiveBaseMesh();
+  const base = buildComposableBaseRoot();
   if (!currentMesh) {
     if (base) {
       currentBaseMesh = base;
-      currentBaseMesh.position.set(
-        Number(baseOffsetXInput.value),
-        Number(baseOffsetYInput.value),
-        Number(baseOffsetZInput.value)
-      );
-      currentBaseMesh.material.transparent = false;
-      currentBaseMesh.material.opacity = 0.95;
+      applyBaseOpaqueVisual(currentBaseMesh);
       setWireframe(currentBaseMesh);
       scene.add(currentBaseMesh);
     }
@@ -1148,11 +1242,6 @@ function composePreview() {
 
   if (base) {
     currentBaseMesh = base;
-    currentBaseMesh.position.set(
-      Number(baseOffsetXInput.value),
-      Number(baseOffsetYInput.value),
-      Number(baseOffsetZInput.value)
-    );
     placeEmblem(currentBaseMesh, currentMesh);
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
@@ -1365,6 +1454,16 @@ resize();
 
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
+
+function isUnderBasePickRoot(obj) {
+  let n = obj;
+  while (n) {
+    if (n === currentBaseMesh || n === currentInversePreviewMesh) return true;
+    n = n.parent;
+  }
+  return false;
+}
+
 renderer.domElement.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   if (transformControls.dragging) return;
@@ -1373,9 +1472,9 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(ndc, camera);
   const candidates = [currentMesh, currentBaseMesh, currentInversePreviewMesh].filter(Boolean);
-  const hit = raycaster.intersectObjects(candidates, false)[0];
+  const hit = raycaster.intersectObjects(candidates, true)[0];
   if (!hit?.object) return;
-  const pickedBase = hit.object === currentBaseMesh || hit.object === currentInversePreviewMesh;
+  const pickedBase = isUnderBasePickRoot(hit.object);
   gizmoTargetInput.value = pickedBase ? "base" : "emblem";
   updateGizmoTarget();
 });
@@ -1782,11 +1881,18 @@ exportCombinedBtn.addEventListener("click", () => {
   if (!currentMesh) {
     return;
   }
-  const activeBase = currentBaseMesh ? cloneMeshInWorldSpace(currentBaseMesh) : getActiveBaseMesh();
-  if (!activeBase) return;
+  let flatBase = null;
+  if (currentBaseMesh) {
+    flatBase = flattenObject3DToSingleMesh(currentBaseMesh);
+  } else {
+    const r = proceduralDiskOnlyRoot();
+    flatBase = flattenObject3DToSingleMesh(r);
+    disposeObjectGeometryTree(r);
+  }
+  if (!flatBase) return;
   dlog("export.combined.click", {
     hasMesh: !!currentMesh,
-    hasBase: !!activeBase,
+    hasBase: !!flatBase,
     inverse: inverseModeInput.checked,
     offsets: {
       base: [baseOffsetXInput.value, baseOffsetYInput.value, baseOffsetZInput.value],
@@ -1797,34 +1903,39 @@ exportCombinedBtn.addEventListener("click", () => {
   });
   const model = cloneMeshInWorldSpace(currentMesh) || currentMesh.clone();
   if (!currentBaseMesh) {
-    activeBase.position.set(
+    flatBase.position.set(
       Number(baseOffsetXInput.value),
       Number(baseOffsetYInput.value),
       Number(baseOffsetZInput.value)
     );
-    placeEmblem(activeBase, model);
+    placeEmblem(flatBase, model);
   }
   // In inverse mode export exactly what preview already shows.
   let result =
     inverseModeInput.checked && currentInversePreviewMesh ? cloneMeshInWorldSpace(currentInversePreviewMesh) : null;
-  if (!result) result = buildCombinedMeshForExport(activeBase, model);
-  if (!result) {
-    dlog("export.combined.failed", {});
-    setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
-    return;
+  try {
+    if (!result) result = buildCombinedMeshForExport(flatBase, model);
+    if (!result) {
+      dlog("export.combined.failed", {});
+      setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
+      return;
+    }
+    dlog("export.combined.success", {
+      resultBox: boxInfo(result),
+    });
+    const exporter = new STLExporter();
+    const stl = exporter.parse(result, { binary: false });
+    const blob = new Blob([stl], { type: "model/stl" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${svgName || "model"}_with_base.stl`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    flatBase.geometry.dispose();
+    flatBase.material.dispose();
   }
-  dlog("export.combined.success", {
-    resultBox: boxInfo(result),
-  });
-  const exporter = new STLExporter();
-  const stl = exporter.parse(result, { binary: false });
-  const blob = new Blob([stl], { type: "model/stl" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${svgName || "model"}_with_base.stl`;
-  a.click();
-  URL.revokeObjectURL(url);
 });
 
 exportZipBtn.addEventListener("click", async () => {
@@ -1859,7 +1970,11 @@ exportZipBtn.addEventListener("click", async () => {
     try {
       const text = await file.text();
       const { mesh } = buildMesh(text, opts);
-      const activeBase = getActiveBaseMesh() || makeGeneratedBaseMesh();
+      let baseRoot = buildComposableBaseRoot({ omitBaseOffset: true });
+      if (!baseRoot) baseRoot = proceduralDiskOnlyRoot();
+      const activeBase = flattenObject3DToSingleMesh(baseRoot);
+      disposeObjectGeometryTree(baseRoot);
+      if (!activeBase) throw new Error("Batch base build failed");
       activeBase.position.set(0, 0, 0);
       placeEmblem(activeBase, mesh, inverse, batchLift, batchInset);
       const combined = buildCombinedMeshForExport(activeBase, mesh, inverse);
