@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Seal Generator</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <aside class="panel">
+      <h1>Seal Generator</h1>
+      <p class="hint">SVG -> STL with live 3D preview</p>
+
+      <label class="field">
+        <span>SVG file</span>
+        <input id="svgFile" type="file" accept=".svg,image/svg+xml" />
+      </label>
+
+      <label class="field">
+        <span>Size (max dimension, mm)</span>
+        <input id="size" type="range" min="10" max="200" step="1" value="60" />
+        <output id="sizeOut">60</output>
+      </label>
+
+      <label class="field">
+        <span>Thickness (mm)</span>
+        <input id="thickness" type="range" min="0.5" max="20" step="0.1" value="2" />
+        <output id="thicknessOut">2.0</output>
+      </label>
+
+      <label class="field">
+        <span>Line density</span>
+        <input id="density" type="range" min="4" max="64" step="1" value="16" />
+        <output id="densityOut">16</output>
+      </label>
+
+      <label class="field checkbox">
+        <input id="autoFix" type="checkbox" checked />
+        <span>Auto-fix unclosed faces</span>
+      </label>
+
+      <label class="field checkbox">
+        <input id="flipY" type="checkbox" checked />
+        <span>Flip vertically (top-bottom)</span>
+      </label>
+
+      <button id="exportBtn" disabled>Export STL</button>
+      <pre id="status">Load an SVG to start.</pre>
+    </aside>
+
+    <main id="viewport"></main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+  </html>
