@@ -511,7 +511,8 @@ function placeEmblem(baseMesh, emblemMesh) {
       const targetDepth = Math.max(inset, 0.05);
       emblemMesh.scale.z *= targetDepth / currentDepth;
       emblemBox = new THREE.Box3().setFromObject(emblemMesh);
-      const desiredTop = baseBox.max.z + 0.01;
+      // Ensure cutter intersects base (slightly below top surface).
+      const desiredTop = baseBox.max.z - 0.001;
       emblemMesh.position.z += desiredTop - emblemBox.max.z;
     } else {
       emblemMesh.position.z = baseBox.max.z + lift - emblemBox.min.z;
@@ -533,24 +534,30 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   baseMesh.updateMatrixWorld(true);
   emblemMesh.updateMatrixWorld(true);
   let baseWorld = baseMesh.geometry.clone().applyMatrix4(baseMesh.matrixWorld);
-  let cutWorld = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
-  // Normalize topology for more stable CSG on SVG extrusions.
+  let cutWorldBase = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
   if (baseWorld.index) baseWorld = baseWorld.toNonIndexed();
-  if (cutWorld.index) cutWorld = cutWorld.toNonIndexed();
+  if (cutWorldBase.index) cutWorldBase = cutWorldBase.toNonIndexed();
   baseWorld = mergeVertices(baseWorld, 1e-5);
-  cutWorld = mergeVertices(cutWorld, 1e-5);
-  const baseBrush = new Brush(baseWorld);
-  baseBrush.updateMatrixWorld(true);
-  const cutBrush = new Brush(cutWorld);
-  cutBrush.updateMatrixWorld(true);
-  try {
+  cutWorldBase = mergeVertices(cutWorldBase, 1e-5);
+
+  const attempt = (extraDepth) => {
+    const cutWorld = cutWorldBase.clone();
+    if (extraDepth > 0) {
+      cutWorld.translate(0, 0, -extraDepth);
+    }
+    const baseBrush = new Brush(baseWorld.clone());
+    baseBrush.updateMatrixWorld(true);
+    const cutBrush = new Brush(cutWorld);
+    cutBrush.updateMatrixWorld(true);
     const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
     const vertCount = subtracted?.geometry?.attributes?.position?.count || 0;
-    if (vertCount === 0) {
-      return null;
-    }
+    if (vertCount === 0) return null;
     subtracted.material = baseMesh.material.clone();
     return subtracted;
+  };
+
+  try {
+    return attempt(0) || attempt(0.2) || attempt(1.0);
   } catch (_err) {
     return null;
   }
