@@ -1067,23 +1067,6 @@ function applyInverseModeBaseReferenceVisual(root) {
   });
 }
 
-/** In inverse mode: faint visible disk + STL for spatial reference (CSG result draws on top). */
-function applyInverseModeBaseReferenceVisual(root) {
-  if (!root) return;
-  root.visible = true;
-  root.traverse((child) => {
-    if (!child.isMesh || !child.material) return;
-    const mats = Array.isArray(child.material) ? child.material : [child.material];
-    for (const m of mats) {
-      m.transparent = true;
-      m.opacity = 0.16;
-      m.depthWrite = false;
-      child.renderOrder = 0;
-      m.needsUpdate = true;
-    }
-  });
-}
-
 function setWireframe(mesh) {
   if (!mesh?.traverse) return;
   mesh.traverse((child) => {
