@@ -338,10 +338,23 @@ function geometrySignature(geometry) {
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   const p = geometry.attributes?.position;
+  let sum = 0;
+  let sq = 0;
+  if (p?.array) {
+    const arr = p.array;
+    const step = Math.max(1, Math.floor(arr.length / 2048));
+    for (let i = 0; i < arr.length; i += step) {
+      const v = Number(arr[i]) || 0;
+      sum += v;
+      sq += v * v;
+    }
+  }
   return {
     verts: p?.count || 0,
     min: box ? [box.min.x, box.min.y, box.min.z].map((v) => Number(v.toFixed(5))) : [0, 0, 0],
     max: box ? [box.max.x, box.max.y, box.max.z].map((v) => Number(v.toFixed(5))) : [0, 0, 0],
+    sum: Number(sum.toFixed(5)),
+    sq: Number(sq.toFixed(5)),
   };
 }
 
@@ -353,7 +366,9 @@ function sameSignature(a, b) {
     a.min[2] === b.min[2] &&
     a.max[0] === b.max[0] &&
     a.max[1] === b.max[1] &&
-    a.max[2] === b.max[2]
+    a.max[2] === b.max[2] &&
+    a.sum === b.sum &&
+    a.sq === b.sq
   );
 }
 
@@ -722,9 +737,8 @@ function composePreview() {
       currentMesh.material.emissive = new THREE.Color(0x5a1f00);
       currentMesh.material.emissiveIntensity = 0.55;
       scene.add(currentMesh);
-      currentBaseMesh.material.transparent = true;
-      currentBaseMesh.material.opacity = 0.18;
-      scene.add(currentBaseMesh);
+      // Don't render the source base mesh in inverse mode to avoid "ghost" interaction.
+      currentBaseMesh.visible = false;
     } else {
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
