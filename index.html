@@ -282,6 +282,18 @@
       <section id="batchWindowContent" class="floating-content">
           <h3 id="batchSectionLabel">Batch</h3>
           <label class="field">
+            <span id="batchFitRatioLabel">Batch fit ratio</span>
+            <input id="batchFitRatio" type="number" min="0.5" max="1.2" step="0.01" value="0.90" />
+          </label>
+          <label class="field">
+            <span id="batchLiftLabel">Batch lift over base (mm)</span>
+            <input id="batchLift" type="number" min="0" max="5" step="0.1" value="0.2" />
+          </label>
+          <label class="field">
+            <span id="batchInsetLabel">Batch inset depth (inverse, mm)</span>
+            <input id="batchInset" type="number" min="0" max="10" step="0.1" value="1.0" />
+          </label>
+          <label class="field">
             <span id="batchLibraryLabel">Library SVG (multiple)</span>
             <select id="batchLibraryList" multiple size="8"></select>
           </label>

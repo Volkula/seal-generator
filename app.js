@@ -75,6 +75,9 @@ const batchWindowContent = document.getElementById("batchWindowContent");
 const batchSvgFilesInput = document.getElementById("batchSvgFiles");
 const batchInverseModeInput = document.getElementById("batchInverseMode");
 const batchExportBtn = document.getElementById("batchExportBtn");
+const batchFitRatioInput = document.getElementById("batchFitRatio");
+const batchLiftInput = document.getElementById("batchLift");
+const batchInsetInput = document.getElementById("batchInset");
 const libraryCategoryInput = document.getElementById("libraryCategory");
 const librarySingleInput = document.getElementById("librarySingle");
 const libraryLoadSingleBtn = document.getElementById("libraryLoadSingleBtn");
@@ -164,6 +167,9 @@ const i18n = {
     batchSvg: "Batch SVG files",
     batchInverse: "Inverse mode for batch",
     batchExport: "Export Batch ZIP (fit to base)",
+    batchFitRatio: "Batch fit ratio",
+    batchLift: "Batch lift over base (mm)",
+    batchInset: "Batch inset depth (inverse, mm)",
     box1: "1. Gizmo & View",
     box2: "2. Selected Object",
     selectedPrefix: "Selected",
@@ -243,6 +249,9 @@ const i18n = {
     batchSvg: "SVG файлы для batch",
     batchInverse: "Inverse режим для batch",
     batchExport: "Экспорт Batch ZIP (под размер базы)",
+    batchFitRatio: "Коэффициент подгонки batch",
+    batchLift: "Подъем batch над базой (мм)",
+    batchInset: "Глубина batch inset (inverse, мм)",
     box1: "1. Гизмо и отображение",
     box2: "2. Выбранный объект",
     selectedPrefix: "Выбрано",
@@ -513,6 +522,9 @@ function applyLocale() {
   document.getElementById("libraryLoadSingleBtn").textContent = t("loadFromLibrary");
   document.getElementById("batchLibraryLabel").textContent = t("batchLibrary");
   document.getElementById("batchAddLibraryBtn").textContent = t("batchAddLibrary");
+  document.getElementById("batchFitRatioLabel").textContent = t("batchFitRatio");
+  document.getElementById("batchLiftLabel").textContent = t("batchLift");
+  document.getElementById("batchInsetLabel").textContent = t("batchInset");
   document.getElementById("modelSectionLabel").textContent = t("modelSection");
   document.getElementById("baseSectionLabel").textContent = t("baseSection");
   document.getElementById("batchSectionLabel").textContent = t("batchSection");
@@ -704,9 +716,9 @@ function updateGizmoTarget() {
   }
 }
 
-function placeEmblem(baseMesh, emblemMesh, inverseOverride = null) {
-  const lift = Number(liftInput.value);
-  const inset = Number(insetInput.value);
+function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride = null, insetOverride = null) {
+  const lift = liftOverride === null ? Number(liftInput.value) : Number(liftOverride);
+  const inset = insetOverride === null ? Number(insetInput.value) : Number(insetOverride);
   const inverse = inverseOverride === null ? inverseModeInput.checked : !!inverseOverride;
   emblemMesh.position.set(0, 0, 0);
   const baseBox = baseMesh ? new THREE.Box3().setFromObject(baseMesh) : null;
@@ -1545,7 +1557,10 @@ exportZipBtn.addEventListener("click", async () => {
   }
 
   const inverse = !!batchInverseModeInput.checked;
-  const fitSize = getBaseFitTargetSize();
+  const fitRatio = clampNumber(Number(batchFitRatioInput.value || 0.9), 0.5, 1.2);
+  const fitSize = clampNumber(Math.floor(getBaseFitTargetSize() * fitRatio), 10, 200);
+  const batchLift = clampNumber(Number(batchLiftInput.value || 0.2), 0, 5);
+  const batchInset = clampNumber(Number(batchInsetInput.value || 1.0), 0, 10);
   const opts = {
     targetSize: fitSize,
     thickness: Number(thicknessInput.value),
@@ -1570,7 +1585,7 @@ exportZipBtn.addEventListener("click", async () => {
       const { mesh } = buildMesh(text, opts);
       const activeBase = getActiveBaseMesh() || makeGeneratedBaseMesh();
       activeBase.position.set(0, 0, 0);
-      placeEmblem(activeBase, mesh, inverse);
+      placeEmblem(activeBase, mesh, inverse, batchLift, batchInset);
       const combined = buildCombinedMeshForExport(activeBase, mesh, inverse);
       if (!combined) throw new Error("Batch combined export failed");
       const stl = exporter.parse(combined, { binary: false });
