@@ -145,76 +145,83 @@
           </div>
         </label>
 
-        <label class="field">
-          <span id="baseOffsetXLabel">Base offset X (mm)</span>
-          <div class="range-row">
-            <input id="baseOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
-            <input id="baseOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="baseOffsetYLabel">Base offset Y (mm)</span>
-          <div class="range-row">
-            <input id="baseOffsetY" type="range" min="-100" max="100" step="0.1" value="0" />
-            <input id="baseOffsetYValue" type="number" min="-100" max="100" step="0.1" value="0" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="baseOffsetZLabel">Base offset Z (mm)</span>
-          <div class="range-row">
-            <input id="baseOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
-            <input id="baseOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="emblemOffsetXLabel">Emblem offset X (mm)</span>
-          <div class="range-row">
-            <input id="emblemOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
-            <input id="emblemOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="emblemOffsetYLabel">Emblem offset Y (mm)</span>
-          <div class="range-row">
-            <input id="emblemOffsetY" type="range" min="-100" max="100" step="0.1" value="0" />
-            <input id="emblemOffsetYValue" type="number" min="-100" max="100" step="0.1" value="0" />
-          </div>
-        </label>
-
-        <label class="field">
-          <span id="emblemOffsetZLabel">Emblem offset Z (mm)</span>
-          <div class="range-row">
-            <input id="emblemOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
-            <input id="emblemOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
-          </div>
-        </label>
-
         <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
         <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
       </details>
 
       <details class="accordion">
         <summary id="viewSectionLabel">View & Export</summary>
-        <label class="field checkbox">
-          <input id="wireframeMode" type="checkbox" />
-          <span id="wireframeModeLabel">Wireframe preview</span>
-        </label>
-        <label class="field checkbox">
-          <input id="gizmoEnabled" type="checkbox" checked />
-          <span id="gizmoEnabledLabel">Enable gizmo</span>
-        </label>
-        <label class="field">
-          <span id="gizmoTargetLabel">Gizmo target</span>
-          <select id="gizmoTarget">
-            <option value="emblem">Emblem</option>
-            <option value="base">Base</option>
-          </select>
-        </label>
-        <button id="gizmoModeBtn">Gizmo: Translate</button>
+        <div class="tool-box">
+          <h3 id="box1Label">1. Gizmo & View</h3>
+          <label class="field checkbox">
+            <input id="wireframeMode" type="checkbox" />
+            <span id="wireframeModeLabel">Wireframe preview</span>
+          </label>
+          <label class="field checkbox">
+            <input id="gizmoEnabled" type="checkbox" checked />
+            <span id="gizmoEnabledLabel">Enable gizmo</span>
+          </label>
+          <label class="field">
+            <span id="gizmoTargetLabel">Gizmo target</span>
+            <select id="gizmoTarget">
+              <option value="emblem">Emblem</option>
+              <option value="base">Base</option>
+            </select>
+          </label>
+          <button id="gizmoModeBtn">Gizmo: Translate</button>
+        </div>
+
+        <div class="tool-box">
+          <h3 id="box2Label">2. Selected Object</h3>
+          <p class="hint" id="selectedObjectLabel">Selected: Emblem</p>
+          <div id="emblemOffsetGroup">
+            <label class="field">
+              <span id="emblemOffsetXLabel">Emblem offset X (mm)</span>
+              <div class="range-row">
+                <input id="emblemOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
+                <input id="emblemOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="emblemOffsetYLabel">Emblem offset Y (mm)</span>
+              <div class="range-row">
+                <input id="emblemOffsetY" type="range" min="-100" max="100" step="0.1" value="0" />
+                <input id="emblemOffsetYValue" type="number" min="-100" max="100" step="0.1" value="0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="emblemOffsetZLabel">Emblem offset Z (mm)</span>
+              <div class="range-row">
+                <input id="emblemOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
+                <input id="emblemOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
+              </div>
+            </label>
+          </div>
+          <div id="baseOffsetGroup" style="display:none">
+            <label class="field">
+              <span id="baseOffsetXLabel">Base offset X (mm)</span>
+              <div class="range-row">
+                <input id="baseOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
+                <input id="baseOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="baseOffsetYLabel">Base offset Y (mm)</span>
+              <div class="range-row">
+                <input id="baseOffsetY" type="range" min="-100" max="100" step="0.1" value="0" />
+                <input id="baseOffsetYValue" type="number" min="-100" max="100" step="0.1" value="0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="baseOffsetZLabel">Base offset Z (mm)</span>
+              <div class="range-row">
+                <input id="baseOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
+                <input id="baseOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
+              </div>
+            </label>
+          </div>
+        </div>
+
         <button id="flatViewBtn">Flat View</button>
         <button id="exportBtn" disabled>Export STL</button>
         <button id="exportCombinedBtn" disabled>Export STL (with base)</button>

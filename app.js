@@ -58,6 +58,9 @@ const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
 const clearCacheBtn = document.getElementById("clearCacheBtn");
+const emblemOffsetGroup = document.getElementById("emblemOffsetGroup");
+const baseOffsetGroup = document.getElementById("baseOffsetGroup");
+const selectedObjectLabel = document.getElementById("selectedObjectLabel");
 const statusEl = document.getElementById("status");
 
 const densityOut = document.getElementById("densityOut");
@@ -76,6 +79,7 @@ let isApplyingHistory = false;
 const csgEvaluator = new Evaluator();
 const gizmoModes = ["translate", "rotate", "scale"];
 let gizmoModeIndex = 0;
+let selectedObjectType = "emblem";
 
 const i18n = {
   en: {
@@ -123,6 +127,11 @@ const i18n = {
     modelSection: "Model",
     baseSection: "Base",
     viewSection: "View & Export",
+    box1: "1. Gizmo & View",
+    box2: "2. Selected Object",
+    selectedPrefix: "Selected",
+    objectEmblem: "Emblem",
+    objectBase: "Base",
     flatView: "Flat View",
     perspectiveView: "3D View",
     statusIdle: "Load an SVG to start.",
@@ -185,6 +194,11 @@ const i18n = {
     modelSection: "Модель",
     baseSection: "Основание",
     viewSection: "Вид и экспорт",
+    box1: "1. Гизмо и отображение",
+    box2: "2. Выбранный объект",
+    selectedPrefix: "Выбрано",
+    objectEmblem: "Эмблема",
+    objectBase: "Основание",
     flatView: "Плоский вид",
     perspectiveView: "3D вид",
     statusIdle: "Загрузите SVG для начала.",
@@ -271,6 +285,13 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+function updateSelectedObjectUI() {
+  const isBase = selectedObjectType === "base";
+  baseOffsetGroup.style.display = isBase ? "block" : "none";
+  emblemOffsetGroup.style.display = isBase ? "none" : "block";
+  selectedObjectLabel.textContent = `${t("selectedPrefix")}: ${isBase ? t("objectBase") : t("objectEmblem")}`;
+}
+
 function t(key) {
   return i18n[currentLang][key];
 }
@@ -285,6 +306,8 @@ function applyLocale() {
   document.getElementById("modelSectionLabel").textContent = t("modelSection");
   document.getElementById("baseSectionLabel").textContent = t("baseSection");
   document.getElementById("viewSectionLabel").textContent = t("viewSection");
+  document.getElementById("box1Label").textContent = t("box1");
+  document.getElementById("box2Label").textContent = t("box2");
   document.getElementById("svgFileLabel").textContent = t("svgFile");
   document.getElementById("baseStlLabel").textContent = t("baseStl");
   document.getElementById("generateBaseLabel").textContent = t("generateBase");
@@ -320,6 +343,7 @@ function applyLocale() {
   document.getElementById("clearCacheBtn").textContent = t("clearCache");
   document.getElementById("flatViewBtn").textContent = isFlatView ? t("perspectiveView") : t("flatView");
   document.getElementById("licenseNote").textContent = t("license");
+  updateSelectedObjectUI();
   if (!svgText) {
     setStatus(t("statusIdle"));
   } else {
@@ -442,6 +466,8 @@ function updateGizmoTarget() {
     transformControls.visible = false;
     return;
   }
+  selectedObjectType = gizmoTargetInput.value === "base" ? "base" : "emblem";
+  updateSelectedObjectUI();
   const target = gizmoTargetInput.value === "base" ? currentBaseMesh : currentMesh;
   if (target) {
     transformControls.visible = true;
@@ -697,6 +723,22 @@ function resize() {
 
 window.addEventListener("resize", resize);
 resize();
+
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  ndc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  const candidates = [currentMesh, currentBaseMesh].filter(Boolean);
+  const hit = raycaster.intersectObjects(candidates, false)[0];
+  if (!hit?.object) return;
+  const pickedBase = hit.object === currentBaseMesh;
+  gizmoTargetInput.value = pickedBase ? "base" : "emblem";
+  updateGizmoTarget();
+});
 
 function closeOpenSubpaths(data) {
   for (const p of data.paths) {

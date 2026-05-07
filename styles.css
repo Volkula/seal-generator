@@ -108,6 +108,20 @@ select {
   margin-bottom: 10px;
 }
 
+.tool-box {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #00000024;
+}
+
+.tool-box h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
 .brand-mark {
   width: 44px;
   height: 44px;
