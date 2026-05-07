@@ -6,46 +6,71 @@
     <title>Seal Generator</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
+  <body data-theme="dark">
     <aside class="panel">
-      <h1>Seal Generator</h1>
-      <p class="hint">SVG -> STL with live 3D preview</p>
+      <div class="topbar">
+        <label class="mini">
+          <span id="themeLabel">Theme</span>
+          <select id="themeSelect">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+        <label class="mini">
+          <span id="langLabel">Language</span>
+          <select id="langSelect">
+            <option value="en">EN</option>
+            <option value="ru">RU</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <h1 id="title">Seal Generator</h1>
+          <p class="hint" id="subtitle">SVG -> STL with live 3D preview</p>
+        </div>
+      </div>
 
       <label class="field">
-        <span>SVG file</span>
+        <span id="svgFileLabel">SVG file</span>
         <input id="svgFile" type="file" accept=".svg,image/svg+xml" />
       </label>
 
       <label class="field">
-        <span>Size (max dimension, mm)</span>
+        <span id="sizeLabel">Size (max dimension, mm)</span>
         <input id="size" type="range" min="10" max="200" step="1" value="60" />
         <output id="sizeOut">60</output>
       </label>
 
       <label class="field">
-        <span>Thickness (mm)</span>
+        <span id="thicknessLabel">Thickness (mm)</span>
         <input id="thickness" type="range" min="0.5" max="20" step="0.1" value="2" />
         <output id="thicknessOut">2.0</output>
       </label>
 
       <label class="field">
-        <span>Line density</span>
+        <span id="densityLabel">Line density</span>
         <input id="density" type="range" min="4" max="64" step="1" value="16" />
         <output id="densityOut">16</output>
       </label>
 
       <label class="field checkbox">
         <input id="autoFix" type="checkbox" checked />
-        <span>Auto-fix unclosed faces</span>
+        <span id="autoFixLabel">Auto-fix unclosed faces</span>
       </label>
 
       <label class="field checkbox">
         <input id="flipY" type="checkbox" checked />
-        <span>Flip vertically (top-bottom)</span>
+        <span id="flipYLabel">Flip vertically (top-bottom)</span>
       </label>
 
       <button id="exportBtn" disabled>Export STL</button>
       <pre id="status">Load an SVG to start.</pre>
+      <p class="license-note" id="licenseNote">
+        All code and visual assets in this repo are released under CC0 1.0 (public domain).
+      </p>
     </aside>
 
     <main id="viewport"></main>
