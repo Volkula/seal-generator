@@ -32,6 +32,13 @@
             <option value="ru">RU</option>
           </select>
         </label>
+        <label class="mini">
+          <span id="sidebarSideLabel">Sidebar</span>
+          <select id="sidebarSideSelect">
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
       </div>
 
       <div class="brand">
@@ -42,13 +49,8 @@
         </div>
       </div>
 
-      <div class="tabs">
-        <button id="tabModelBtn" class="tab-btn active" data-tab="model">Model</button>
-        <button id="tabBaseBtn" class="tab-btn" data-tab="base">Base</button>
-        <button id="tabExportBtn" class="tab-btn" data-tab="export">Export</button>
-      </div>
-
-      <section class="tab-panel active" data-panel="model">
+      <details class="accordion" open>
+        <summary id="modelSectionLabel">Model</summary>
         <label class="field">
           <span id="svgFileLabel">SVG file</span>
           <input id="svgFile" type="file" accept=".svg,image/svg+xml" multiple />
@@ -95,9 +97,10 @@
           <input id="inverseMode" type="checkbox" />
           <span id="inverseModeLabel">Inverse (negative stamp)</span>
         </label>
-      </section>
+      </details>
 
-      <section class="tab-panel" data-panel="base">
+      <details class="accordion">
+        <summary id="baseSectionLabel">Base</summary>
         <label class="field">
           <span id="baseStlLabel">Base STL (optional)</span>
           <input id="baseStlFile" type="file" accept=".stl,model/stl" />
@@ -174,9 +177,25 @@
 
         <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
         <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
-      </section>
+      </details>
 
-      <section class="tab-panel" data-panel="export">
+      <details class="accordion">
+        <summary id="viewSectionLabel">View & Export</summary>
+        <label class="field checkbox">
+          <input id="wireframeMode" type="checkbox" />
+          <span id="wireframeModeLabel">Wireframe preview</span>
+        </label>
+        <label class="field checkbox">
+          <input id="gizmoEnabled" type="checkbox" />
+          <span id="gizmoEnabledLabel">Enable gizmo</span>
+        </label>
+        <label class="field">
+          <span id="gizmoTargetLabel">Gizmo target</span>
+          <select id="gizmoTarget">
+            <option value="emblem">Emblem</option>
+            <option value="base">Base</option>
+          </select>
+        </label>
         <button id="flatViewBtn">Flat View</button>
         <button id="exportBtn" disabled>Export STL</button>
         <button id="exportCombinedBtn" disabled>Export STL (with base)</button>
@@ -185,7 +204,7 @@
           <button id="undoBtn">Undo</button>
           <button id="redoBtn">Redo</button>
         </div>
-      </section>
+      </details>
 
       <pre id="status">Load an SVG to start.</pre>
       <p class="license-note" id="licenseNote">

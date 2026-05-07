@@ -36,6 +36,17 @@ body {
   color: var(--text);
 }
 
+body[data-sidebar="right"] {
+  grid-template-columns: 1fr 320px;
+}
+
+body[data-sidebar="right"] .panel {
+  order: 2;
+  border-right: none;
+  border-left: 1px solid var(--line);
+  box-shadow: inset 1px 0 0 #00000040;
+}
+
 .panel {
   border-right: 1px solid var(--line);
   padding: 16px 16px 20px;
@@ -46,7 +57,7 @@ body {
 
 .topbar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -78,32 +89,23 @@ select {
   margin-bottom: 12px;
 }
 
-.tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.tab-btn {
-  margin-top: 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #0000002c;
+.accordion {
   border: 1px solid var(--line);
-  color: var(--text);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  background: #00000022;
+  padding: 6px 10px 2px;
 }
 
-.tab-btn.active {
-  background: linear-gradient(180deg, #6c4f25, #4f391a);
+.accordion > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 8px;
 }
 
-.tab-panel {
-  display: none;
-}
-
-.tab-panel.active {
-  display: block;
+.accordion[open] > summary {
+  margin-bottom: 10px;
 }
 
 .brand-mark {

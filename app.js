@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import JSZip from "https://esm.sh/jszip@3.10.1";
+import { Evaluator, Brush, SUBTRACTION } from "https://esm.sh/three-bvh-csg@0.0.17?external=three";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
@@ -16,6 +18,7 @@ const baseThicknessInput = document.getElementById("baseThickness");
 const baseThicknessValueInput = document.getElementById("baseThicknessValue");
 const themeSelect = document.getElementById("themeSelect");
 const langSelect = document.getElementById("langSelect");
+const sidebarSideSelect = document.getElementById("sidebarSideSelect");
 const sizeInput = document.getElementById("size");
 const sizeValueInput = document.getElementById("sizeValue");
 const thicknessInput = document.getElementById("thickness");
@@ -29,6 +32,9 @@ const autoFixInput = document.getElementById("autoFix");
 const flipYInput = document.getElementById("flipY");
 const flipXInput = document.getElementById("flipX");
 const inverseModeInput = document.getElementById("inverseMode");
+const wireframeModeInput = document.getElementById("wireframeMode");
+const gizmoEnabledInput = document.getElementById("gizmoEnabled");
+const gizmoTargetInput = document.getElementById("gizmoTarget");
 const baseOffsetXInput = document.getElementById("baseOffsetX");
 const baseOffsetXValueInput = document.getElementById("baseOffsetXValue");
 const baseOffsetZInput = document.getElementById("baseOffsetZ");
@@ -45,8 +51,6 @@ const fitBaseToEmblemBtn = document.getElementById("fitBaseToEmblemBtn");
 const fitEmblemToBaseBtn = document.getElementById("fitEmblemToBaseBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
-const tabButtons = Array.from(document.querySelectorAll(".tab-btn"));
-const tabPanels = Array.from(document.querySelectorAll(".tab-panel"));
 const statusEl = document.getElementById("status");
 
 const densityOut = document.getElementById("densityOut");
@@ -62,6 +66,7 @@ let isFlatView = false;
 let history = [];
 let historyIndex = -1;
 let isApplyingHistory = false;
+const csgEvaluator = new Evaluator();
 
 const i18n = {
   en: {
@@ -69,6 +74,7 @@ const i18n = {
     subtitle: "SVG -> STL with live 3D preview",
     theme: "Theme",
     language: "Language",
+    sidebarSide: "Sidebar",
     svgFile: "SVG file",
     baseStl: "Base STL (optional)",
     generateBase: "Generate round base",
@@ -79,6 +85,9 @@ const i18n = {
     lift: "Lift over base (mm)",
     inset: "Inset depth (inverse, mm)",
     inverseMode: "Inverse (negative stamp)",
+    wireframeMode: "Wireframe preview",
+    gizmoEnabled: "Enable gizmo",
+    gizmoTarget: "Gizmo target",
     baseOffsetX: "Base offset X (mm)",
     baseOffsetZ: "Base offset Z (mm)",
     emblemOffsetX: "Emblem offset X (mm)",
@@ -94,9 +103,9 @@ const i18n = {
     fitEmblemToBase: "Auto-fit emblem to base",
     undo: "Undo",
     redo: "Redo",
-    tabModel: "Model",
-    tabBase: "Base",
-    tabExport: "Export",
+    modelSection: "Model",
+    baseSection: "Base",
+    viewSection: "View & Export",
     flatView: "Flat View",
     perspectiveView: "3D View",
     statusIdle: "Load an SVG to start.",
@@ -119,6 +128,7 @@ const i18n = {
     subtitle: "SVG -> STL с живым 3D-превью",
     theme: "Тема",
     language: "Язык",
+    sidebarSide: "Сайдбар",
     svgFile: "SVG файл",
     baseStl: "Основание STL (опционально)",
     generateBase: "Сгенерировать круглое основание",
@@ -129,6 +139,9 @@ const i18n = {
     lift: "Подъем над основанием (мм)",
     inset: "Глубина утапливания (inverse, мм)",
     inverseMode: "Inverse (негатив для оттиска)",
+    wireframeMode: "Wireframe-предпросмотр",
+    gizmoEnabled: "Включить гизмо",
+    gizmoTarget: "Цель гизмо",
     baseOffsetX: "Смещение основания X (мм)",
     baseOffsetZ: "Смещение основания Z (мм)",
     emblemOffsetX: "Смещение эмблемы X (мм)",
@@ -144,9 +157,9 @@ const i18n = {
     fitEmblemToBase: "Автоподгонка эмблемы под основание",
     undo: "Отменить",
     redo: "Повторить",
-    tabModel: "Модель",
-    tabBase: "Основание",
-    tabExport: "Экспорт",
+    modelSection: "Модель",
+    baseSection: "Основание",
+    viewSection: "Вид и экспорт",
     flatView: "Плоский вид",
     perspectiveView: "3D вид",
     statusIdle: "Загрузите SVG для начала.",
@@ -180,6 +193,27 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 0, 0);
 
+const transformControls = new TransformControls(camera, renderer.domElement);
+transformControls.setMode("translate");
+transformControls.showY = false;
+transformControls.size = 0.75;
+transformControls.addEventListener("dragging-changed", (event) => {
+  controls.enabled = !event.value;
+});
+transformControls.addEventListener("objectChange", () => {
+  const obj = transformControls.object;
+  if (!obj) return;
+  if (obj === currentBaseMesh) {
+    baseOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
+    baseOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
+  } else if (obj === currentMesh) {
+    emblemOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
+    emblemOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
+  }
+  refreshOutputs();
+});
+scene.add(transformControls);
+
 scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
 keyLight.position.set(100, 160, 120);
@@ -192,15 +226,6 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
-function setActiveTab(tab) {
-  for (const btn of tabButtons) {
-    btn.classList.toggle("active", btn.dataset.tab === tab);
-  }
-  for (const panel of tabPanels) {
-    panel.classList.toggle("active", panel.dataset.panel === tab);
-  }
-}
-
 function t(key) {
   return i18n[currentLang][key];
 }
@@ -211,6 +236,10 @@ function applyLocale() {
   document.getElementById("subtitle").textContent = t("subtitle");
   document.getElementById("themeLabel").textContent = t("theme");
   document.getElementById("langLabel").textContent = t("language");
+  document.getElementById("sidebarSideLabel").textContent = t("sidebarSide");
+  document.getElementById("modelSectionLabel").textContent = t("modelSection");
+  document.getElementById("baseSectionLabel").textContent = t("baseSection");
+  document.getElementById("viewSectionLabel").textContent = t("viewSection");
   document.getElementById("svgFileLabel").textContent = t("svgFile");
   document.getElementById("baseStlLabel").textContent = t("baseStl");
   document.getElementById("generateBaseLabel").textContent = t("generateBase");
@@ -229,6 +258,9 @@ function applyLocale() {
   document.getElementById("flipYLabel").textContent = t("flipY");
   document.getElementById("flipXLabel").textContent = t("flipX");
   document.getElementById("inverseModeLabel").textContent = t("inverseMode");
+  document.getElementById("wireframeModeLabel").textContent = t("wireframeMode");
+  document.getElementById("gizmoEnabledLabel").textContent = t("gizmoEnabled");
+  document.getElementById("gizmoTargetLabel").textContent = t("gizmoTarget");
   document.getElementById("exportBtn").textContent = t("export");
   document.getElementById("exportCombinedBtn").textContent = t("exportCombined");
   document.getElementById("exportZipBtn").textContent = t("exportZip");
@@ -236,9 +268,6 @@ function applyLocale() {
   document.getElementById("fitEmblemToBaseBtn").textContent = t("fitEmblemToBase");
   document.getElementById("undoBtn").textContent = t("undo");
   document.getElementById("redoBtn").textContent = t("redo");
-  document.getElementById("tabModelBtn").textContent = t("tabModel");
-  document.getElementById("tabBaseBtn").textContent = t("tabBase");
-  document.getElementById("tabExportBtn").textContent = t("tabExport");
   document.getElementById("flatViewBtn").textContent = isFlatView ? t("perspectiveView") : t("flatView");
   document.getElementById("licenseNote").textContent = t("license");
   if (!svgText) {
@@ -312,6 +341,65 @@ function getActiveBaseMesh() {
   return null;
 }
 
+function setWireframe(mesh) {
+  if (!mesh?.material) return;
+  mesh.material.wireframe = wireframeModeInput.checked;
+}
+
+function updateGizmoTarget() {
+  if (!gizmoEnabledInput.checked) {
+    transformControls.detach();
+    transformControls.visible = false;
+    return;
+  }
+  const target = gizmoTargetInput.value === "base" ? currentBaseMesh : currentMesh;
+  if (target) {
+    transformControls.visible = true;
+    transformControls.attach(target);
+  } else {
+    transformControls.detach();
+    transformControls.visible = false;
+  }
+}
+
+function placeEmblem(baseMesh, emblemMesh) {
+  const lift = Number(liftInput.value);
+  const inset = Number(insetInput.value);
+  const inverse = inverseModeInput.checked;
+  emblemMesh.position.set(0, 0, 0);
+  emblemMesh.scale.set(1, 1, 1);
+  const baseBox = baseMesh ? new THREE.Box3().setFromObject(baseMesh) : null;
+  const emblemBox = new THREE.Box3().setFromObject(emblemMesh);
+  if (baseBox) {
+    if (inverse) {
+      emblemMesh.position.y = baseBox.max.y - inset - emblemBox.max.y;
+    } else {
+      emblemMesh.position.y = baseBox.max.y + lift - emblemBox.min.y;
+    }
+  }
+  emblemMesh.position.x += Number(emblemOffsetXInput.value);
+  emblemMesh.position.z += Number(emblemOffsetZInput.value);
+}
+
+function buildCombinedMeshForExport(baseMesh, emblemMesh) {
+  if (!inverseModeInput.checked) {
+    const group = new THREE.Group();
+    group.add(baseMesh);
+    group.add(emblemMesh);
+    return group;
+  }
+  // True inverse: subtract emblem volume from base.
+  const baseBrush = new Brush(baseMesh.geometry.clone());
+  baseBrush.position.copy(baseMesh.position);
+  baseBrush.updateMatrixWorld(true);
+  const cutBrush = new Brush(emblemMesh.geometry.clone());
+  cutBrush.position.copy(emblemMesh.position);
+  cutBrush.updateMatrixWorld(true);
+  const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
+  subtracted.material = baseMesh.material.clone();
+  return subtracted;
+}
+
 function composePreview() {
   if (currentMesh) scene.remove(currentMesh);
   if (currentBaseMesh) {
@@ -329,38 +417,43 @@ function composePreview() {
   if (base) {
     currentBaseMesh = base;
     currentBaseMesh.position.set(Number(baseOffsetXInput.value), 0, Number(baseOffsetZInput.value));
-    const baseBox = new THREE.Box3().setFromObject(base);
-    const modelBox = new THREE.Box3().setFromObject(currentMesh);
-    const lift = Number(liftInput.value);
-    const inset = Number(insetInput.value);
-    const inverse = inverseModeInput.checked;
-    currentMesh.position.set(0, 0, 0);
-    if (inverse) {
-      currentMesh.scale.y = -Math.abs(currentMesh.scale.y || 1);
-      const invBox = new THREE.Box3().setFromObject(currentMesh);
-      currentMesh.position.y += baseBox.max.y - inset - invBox.max.y;
+    placeEmblem(currentBaseMesh, currentMesh);
+    setWireframe(currentBaseMesh);
+    if (inverseModeInput.checked) {
+      const previewCombined = buildCombinedMeshForExport(currentBaseMesh.clone(), currentMesh.clone());
+      setWireframe(previewCombined);
+      scene.add(previewCombined);
+      currentMesh.material.transparent = true;
+      currentMesh.material.opacity = 0.35;
+      scene.add(currentMesh);
+      scene.remove(currentBaseMesh);
+      currentBaseMesh.geometry.dispose();
+      currentBaseMesh.material.dispose();
+      currentBaseMesh = previewCombined;
     } else {
-      currentMesh.scale.y = Math.abs(currentMesh.scale.y || 1);
-      const normalBox = new THREE.Box3().setFromObject(currentMesh);
-      currentMesh.position.y += baseBox.max.y + lift - normalBox.min.y;
+      currentMesh.material.transparent = false;
+      currentMesh.material.opacity = 1.0;
+      scene.add(currentBaseMesh);
     }
-    currentMesh.position.x += Number(emblemOffsetXInput.value);
-    currentMesh.position.z += Number(emblemOffsetZInput.value);
-    scene.add(base);
     exportCombinedBtn.disabled = false;
   } else {
+    currentMesh.material.transparent = false;
+    currentMesh.material.opacity = 1.0;
     currentMesh.position.set(0, 0, 0);
     currentMesh.position.x += Number(emblemOffsetXInput.value);
     currentMesh.position.z += Number(emblemOffsetZInput.value);
     exportCombinedBtn.disabled = true;
   }
+  setWireframe(currentMesh);
   scene.add(currentMesh);
+  updateGizmoTarget();
 }
 
 function captureState() {
   return {
     lang: currentLang,
     theme: document.body.dataset.theme || "dark",
+    sidebarSide: sidebarSideSelect.value,
     size: sizeInput.value,
     thickness: thicknessInput.value,
     lift: liftInput.value,
@@ -370,6 +463,9 @@ function captureState() {
     flipX: flipXInput.checked,
     flipY: flipYInput.checked,
     inverseMode: inverseModeInput.checked,
+    wireframeMode: wireframeModeInput.checked,
+    gizmoEnabled: gizmoEnabledInput.checked,
+    gizmoTarget: gizmoTargetInput.value,
     baseOffsetX: baseOffsetXInput.value,
     baseOffsetZ: baseOffsetZInput.value,
     emblemOffsetX: emblemOffsetXInput.value,
@@ -388,6 +484,7 @@ function applyState(state) {
   currentLang = state.lang ?? currentLang;
   langSelect.value = currentLang;
   themeSelect.value = state.theme ?? "dark";
+  sidebarSideSelect.value = state.sidebarSide ?? "left";
   sizeInput.value = state.size ?? sizeInput.value;
   thicknessInput.value = state.thickness ?? thicknessInput.value;
   liftInput.value = state.lift ?? liftInput.value;
@@ -397,6 +494,9 @@ function applyState(state) {
   flipXInput.checked = !!state.flipX;
   flipYInput.checked = !!state.flipY;
   inverseModeInput.checked = !!state.inverseMode;
+  wireframeModeInput.checked = !!state.wireframeMode;
+  gizmoEnabledInput.checked = !!state.gizmoEnabled;
+  gizmoTargetInput.value = state.gizmoTarget ?? "emblem";
   baseOffsetXInput.value = state.baseOffsetX ?? baseOffsetXInput.value;
   baseOffsetZInput.value = state.baseOffsetZ ?? baseOffsetZInput.value;
   emblemOffsetXInput.value = state.emblemOffsetX ?? emblemOffsetXInput.value;
@@ -407,6 +507,7 @@ function applyState(state) {
   svgText = state.svgText ?? svgText;
   svgName = state.svgName ?? svgName;
   applyTheme(themeSelect.value);
+  document.body.dataset.sidebar = sidebarSideSelect.value;
   applyLocale();
   setFlatView(!!state.flatView);
   rebuild();
@@ -674,7 +775,7 @@ baseStlFileInput.addEventListener("change", async (e) => {
   commitHistory();
 });
 
-for (const input of [sizeInput, thicknessInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetZInput]) {
+for (const input of [sizeInput, thicknessInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetZInput, wireframeModeInput, gizmoEnabledInput]) {
   input.addEventListener("input", rebuild);
   input.addEventListener("change", () => {
     rebuild();
@@ -761,12 +862,20 @@ emblemOffsetZValueInput.addEventListener("input", () => {
 emblemOffsetZValueInput.addEventListener("change", commitHistory);
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
+sidebarSideSelect.addEventListener("change", () => {
+  document.body.dataset.sidebar = sidebarSideSelect.value;
+  commitHistory();
+});
 langSelect.addEventListener("change", () => {
   currentLang = langSelect.value;
   applyLocale();
   commitHistory();
 });
 themeSelect.addEventListener("change", commitHistory);
+gizmoTargetInput.addEventListener("change", () => {
+  updateGizmoTarget();
+  commitHistory();
+});
 
 exportBtn.addEventListener("click", () => {
   if (!currentMesh) {
@@ -789,28 +898,12 @@ exportCombinedBtn.addEventListener("click", () => {
   }
   const activeBase = getActiveBaseMesh();
   if (!activeBase) return;
-  const baseBox = new THREE.Box3().setFromObject(activeBase);
-  const model = currentMesh.clone();
-  const inverse = inverseModeInput.checked;
-  const lift = Number(liftInput.value);
-  const inset = Number(insetInput.value);
-  if (inverse) {
-    model.scale.y = -Math.abs(model.scale.y || 1);
-    const invBox = new THREE.Box3().setFromObject(model);
-    model.position.y += baseBox.max.y - inset - invBox.max.y;
-  } else {
-    model.scale.y = Math.abs(model.scale.y || 1);
-    const modelBox = new THREE.Box3().setFromObject(model);
-    model.position.y += baseBox.max.y + lift - modelBox.min.y;
-  }
   activeBase.position.set(Number(baseOffsetXInput.value), 0, Number(baseOffsetZInput.value));
-  model.position.x += Number(emblemOffsetXInput.value);
-  model.position.z += Number(emblemOffsetZInput.value);
+  const model = currentMesh.clone();
+  placeEmblem(activeBase, model);
+  const result = buildCombinedMeshForExport(activeBase, model);
   const exporter = new STLExporter();
-  const combined = new THREE.Group();
-  combined.add(activeBase);
-  combined.add(model);
-  const stl = exporter.parse(combined, { binary: false });
+  const stl = exporter.parse(result, { binary: false });
   const blob = new Blob([stl], { type: "model/stl" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -915,10 +1008,6 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-for (const btn of tabButtons) {
-  btn.addEventListener("click", () => setActiveTab(btn.dataset.tab));
-}
-
 function animate() {
   controls.update();
   renderer.render(scene, camera);
@@ -928,7 +1017,7 @@ animate();
 
 refreshOutputs();
 applyTheme("dark");
+document.body.dataset.sidebar = "left";
 applyLocale();
 loadFromCache();
 commitHistory();
-setActiveTab("model");
