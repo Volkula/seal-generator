@@ -53,6 +53,6 @@ Build and maintain a browser-based SVG-to-STL generator with live 3D preview, ba
 
 ## Delivery and DevOps Requirements
 
-- Push changes directly to `main` when requested.
+- After **every** substantive change from the agent (not tiny one-line “try this” tweaks unless the user says otherwise): **`git add`**, commit with a clear message, **`git push` to `main`**. Treat this as default closing step for the session, same as fixing the bug—don’t skip it.
 - Deploy via GitHub Actions to GitHub Pages.
 - Keep app static-hosting compatible (no backend dependency).

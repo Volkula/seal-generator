@@ -5,9 +5,8 @@ import { SVGLoader } from "three/addons/loaders/SVGLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import JSZip from "https://esm.sh/jszip@3.10.1";
+import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 import { Evaluator, Brush, SUBTRACTION } from "three-bvh-csg";
-import { CSG } from "https://esm.sh/three-csg-ts@3.2.0";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
@@ -150,6 +149,12 @@ const lastEmblemCanonicalPosition = new THREE.Vector3();
 const emblemGizmoEuler = new THREE.Euler(0, 0, 0, "XYZ");
 const emblemGizmoScale = new THREE.Vector3(1, 1, 1);
 let inverseCombinedRafId = 0;
+/** Low-density emblem geometry for inverse-mode CSG preview only; export uses full-density `currentMesh`. */
+let inversePreviewCutterMesh = null;
+/** Max SVG extrusion `curveSegments` for preview cutter; lower = faster coarse inverse preview vs export quality. */
+const INVERSE_PREVIEW_CURVE_SEGMENTS_CAP = 12;
+/** Invalidate when emblem extrusion opts / SVG fingerprint change — avoids rebuilding the coarse cutter on every lift/offset rebuild. */
+let inversePreviewCutterCacheKey = "";
 
 const i18n = {
   en: {
@@ -924,6 +929,22 @@ function disposeObjectGeometryTree(obj) {
   });
 }
 
+/** Non-indexed BufferGeometry with only `position` — mergeGeometries requires identical attributes and index vs non-index uniformity. */
+function sanitizeGeometryForMerge(geom) {
+  let g = geom;
+  if (g.index) {
+    const nonIndexed = g.toNonIndexed();
+    g.dispose();
+    g = nonIndexed;
+  }
+  const names = Object.keys(g.attributes || {});
+  for (const name of names) {
+    if (name !== "position") g.deleteAttribute(name);
+  }
+  g.clearGroups();
+  return g;
+}
+
 /** Merge meshes under root into one world-space mesh for CSG / STL export path. Caller disposes returned mesh after use unless kept in scene. */
 function flattenObject3DToSingleMesh(sourceRoot, materialFallback = null) {
   sourceRoot?.updateMatrixWorld(true);
@@ -932,12 +953,19 @@ function flattenObject3DToSingleMesh(sourceRoot, materialFallback = null) {
   sourceRoot?.traverse?.((child) => {
     if (child.isMesh && child.geometry) {
       child.updateMatrixWorld(true);
-      geoms.push(child.geometry.clone().applyMatrix4(child.matrixWorld));
+      geoms.push(sanitizeGeometryForMerge(child.geometry.clone().applyMatrix4(child.matrixWorld)));
       if (!pickedMat && child.material) pickedMat = child.material.clone();
     }
   });
   if (!geoms.length) return null;
   const merged = geoms.length === 1 ? geoms[0] : mergeGeometries(geoms, false);
+  if (!merged) {
+    geoms.forEach((g) => g.dispose());
+    return null;
+  }
+  if (geoms.length > 1) {
+    geoms.forEach((g) => g.dispose());
+  }
   merged.computeVertexNormals();
   const mesh = new THREE.Mesh(
     merged,
@@ -1076,13 +1104,15 @@ function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride 
   emblemMesh.position.z += Number(emblemOffsetZInput.value);
 }
 
-function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null) {
+function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null, silentLogs = false) {
   const inverseMode = inverseOverride === null ? inverseModeInput.checked : !!inverseOverride;
-  dlog("inverse.export.start", {
-    inverse: inverseMode,
-    baseBox: boxInfo(baseMesh),
-    emblemBox: boxInfo(emblemMesh),
-  });
+  if (!silentLogs) {
+    dlog("inverse.export.start", {
+      inverse: inverseMode,
+      baseBox: boxInfo(baseMesh),
+      emblemBox: boxInfo(emblemMesh),
+    });
+  }
   if (!inverseMode) {
     const group = new THREE.Group();
     group.add(baseMesh);
@@ -1099,15 +1129,17 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
   baseWorld = ensureIndexedGeometry(mergeVertices(baseWorld, 1e-5));
   cutWorldBase = ensureIndexedGeometry(mergeVertices(cutWorldBase, 1e-5));
   const baseSig = geometrySignature(baseWorld);
-  dlog("inverse.export.normalized", {
-    baseVerts: baseWorld.attributes?.position?.count || 0,
-    cutVerts: cutWorldBase.attributes?.position?.count || 0,
-    baseBox: boxInfo(baseWorld),
-    cutBox: boxInfo(cutWorldBase),
-  });
+  if (!silentLogs) {
+    dlog("inverse.export.normalized", {
+      baseVerts: baseWorld.attributes?.position?.count || 0,
+      cutVerts: cutWorldBase.attributes?.position?.count || 0,
+      baseBox: boxInfo(baseWorld),
+      cutBox: boxInfo(cutWorldBase),
+    });
+  }
 
   const attempt = (extraDepth) => {
-    dlog("inverse.export.attempt.begin", { extraDepth });
+    if (!silentLogs) dlog("inverse.export.attempt.begin", { extraDepth });
     const cutWorld = cutWorldBase.clone();
     if (extraDepth > 0) {
       cutWorld.translate(0, 0, -extraDepth);
@@ -1119,12 +1151,14 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
     const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
     const vertCount = subtracted?.geometry?.attributes?.position?.count || 0;
     const resultSig = vertCount ? geometrySignature(subtracted.geometry) : null;
-    dlog("inverse.export.attempt.result", {
-      extraDepth,
-      vertCount,
-      unchanged: resultSig ? sameSignature(baseSig, resultSig) : null,
-      resultBox: vertCount ? boxInfo(subtracted) : null,
-    });
+    if (!silentLogs) {
+      dlog("inverse.export.attempt.result", {
+        extraDepth,
+        vertCount,
+        unchanged: resultSig ? sameSignature(baseSig, resultSig) : null,
+        resultBox: vertCount ? boxInfo(subtracted) : null,
+      });
+    }
     if (vertCount === 0) return null;
     if (resultSig && sameSignature(baseSig, resultSig)) return null;
     subtracted.material = baseMesh.material.clone();
@@ -1135,34 +1169,14 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
     // Keep fallback nudges shallow so exported cut matches user placement.
     const result = attempt(0) || attempt(0.02) || attempt(0.06);
     if (result) {
-      dlog("inverse.export.end", { success: true, method: "bvh-csg" });
+      if (!silentLogs) dlog("inverse.export.end", { success: true, method: "bvh-csg" });
       return result;
     }
   } catch (_err) {
-    dlog("inverse.export.exception", { message: String(_err), method: "bvh-csg" });
+    if (!silentLogs) dlog("inverse.export.exception", { message: String(_err), method: "bvh-csg" });
   }
 
-  // Fallback: BSP-based subtraction (slower, but often robust on messy SVG meshes).
-  try {
-    const baseClone = baseMesh.clone();
-    const cutClone = emblemMesh.clone();
-    const bspResult = CSG.subtract(baseClone, cutClone);
-    const vertCount = bspResult?.geometry?.attributes?.position?.count || 0;
-    const resultSig = vertCount ? geometrySignature(bspResult.geometry) : null;
-    dlog("inverse.export.fallback.bsp", {
-      vertCount,
-      unchanged: resultSig ? sameSignature(baseSig, resultSig) : null,
-    });
-    if (vertCount > 0 && !(resultSig && sameSignature(baseSig, resultSig))) {
-      bspResult.material = baseMesh.material.clone();
-      dlog("inverse.export.end", { success: true, method: "three-csg-ts" });
-      return bspResult;
-    }
-  } catch (_err) {
-    dlog("inverse.export.exception", { message: String(_err), method: "three-csg-ts" });
-  }
-
-  dlog("inverse.export.end", { success: false, method: "none" });
+  if (!silentLogs) dlog("inverse.export.end", { success: false, method: "none" });
   return null;
 }
 
@@ -1238,13 +1252,35 @@ function disposeCurrentInversePreviewMesh() {
 function rebuildInverseCombinedMesh(options = {}) {
   const skipGizmoUpdate = !!options.skipGizmoUpdate;
   if (!inverseModeInput.checked || !currentMesh || !currentBaseMesh) return;
+  transformControls.detach();
   disposeCurrentInversePreviewMesh();
   const flatBase = flattenObject3DToSingleMesh(currentBaseMesh);
-  if (!flatBase) return;
-  const previewCombined = buildCombinedMeshForExport(flatBase, currentMesh.clone());
-  flatBase.geometry.dispose();
-  flatBase.material.dispose();
-  if (!previewCombined) return;
+  if (!flatBase) {
+    if (!skipGizmoUpdate) updateGizmoTarget();
+    return;
+  }
+  const previewCutter = inversePreviewCutterMesh ? inversePreviewCutterMesh.clone(true) : currentMesh.clone();
+  previewCutter.position.copy(currentMesh.position);
+  previewCutter.rotation.copy(currentMesh.rotation);
+  previewCutter.scale.copy(currentMesh.scale);
+  previewCutter.updateMatrixWorld(true);
+
+  let previewCombined;
+  try {
+    previewCombined = buildCombinedMeshForExport(flatBase, previewCutter, null, true);
+  } finally {
+    flatBase.geometry.dispose();
+    flatBase.material.dispose();
+    if (inversePreviewCutterMesh) {
+      previewCutter.geometry.dispose();
+      previewCutter.material.dispose();
+    }
+  }
+
+  if (!previewCombined) {
+    if (!skipGizmoUpdate) updateGizmoTarget();
+    return;
+  }
   setWireframe(previewCombined);
   scene.add(previewCombined);
   currentInversePreviewMesh = previewCombined;
@@ -1261,6 +1297,7 @@ function scheduleRebuildInverseCombinedMesh() {
 }
 
 function composePreview() {
+  transformControls.detach();
   if (currentMesh) scene.remove(currentMesh);
   if (currentInversePreviewMesh) {
     scene.remove(currentInversePreviewMesh);
@@ -1291,6 +1328,8 @@ function composePreview() {
     placeEmblem(currentBaseMesh, currentMesh);
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
+      scene.add(currentBaseMesh);
+      currentBaseMesh.visible = false;
       rebuildInverseCombinedMesh({ skipGizmoUpdate: true });
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
@@ -1298,9 +1337,7 @@ function composePreview() {
       currentMesh.material.emissive = new THREE.Color(0x5a1f00);
       currentMesh.material.emissiveIntensity = 0.55;
       currentMesh.visible = false;
-      scene.add(currentMesh);
-      // Don't render the source base mesh in inverse mode to avoid "ghost" interaction.
-      currentBaseMesh.visible = false;
+      // Base stays in the scene graph (invisible) so TransformControls can attach when inverse preview fails.
     } else {
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
@@ -1553,14 +1590,26 @@ function applyMirror(geometry, flipX, flipY) {
   geometry.scale(sx, sy, 1);
 
   // If we mirror over exactly one axis, triangle winding must be reversed.
-  if (flipX !== flipY && geometry.index) {
-    const idx = geometry.index.array;
-    for (let i = 0; i < idx.length; i += 3) {
-      const t = idx[i + 1];
-      idx[i + 1] = idx[i + 2];
-      idx[i + 2] = t;
+  if (flipX !== flipY) {
+    if (geometry.index) {
+      const idx = geometry.index.array;
+      for (let i = 0; i < idx.length; i += 3) {
+        const t = idx[i + 1];
+        idx[i + 1] = idx[i + 2];
+        idx[i + 2] = t;
+      }
+      geometry.index.needsUpdate = true;
+    } else if (geometry.attributes.position) {
+      const arr = geometry.attributes.position.array;
+      for (let i = 0; i < arr.length; i += 9) {
+        for (let c = 0; c < 3; c += 1) {
+          const t = arr[i + 3 + c];
+          arr[i + 3 + c] = arr[i + 6 + c];
+          arr[i + 6 + c] = t;
+        }
+      }
+      geometry.attributes.position.needsUpdate = true;
     }
-    geometry.index.needsUpdate = true;
   }
 }
 
@@ -1592,7 +1641,9 @@ function buildMesh(svg, opts) {
     throw new Error(currentLang === "ru" ? "Нет замкнутых фигур. Включите автофикс." : "No closed shapes found. Try enabling auto-fix.");
   }
 
-  const merged = mergeGeometries(geometries, false);
+  const prepared = geometries.map((g) => sanitizeGeometryForMerge(g));
+  const merged = mergeGeometries(prepared, false);
+  prepared.forEach((g) => g.dispose());
   if (!merged) {
     throw new Error(currentLang === "ru" ? "Не удалось объединить геометрию." : "Could not merge geometry.");
   }
@@ -1666,9 +1717,78 @@ function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Sampled fingerprint to pair with length and extrusion knobs for inverse preview cutter caching. */
+function quickStringFingerprint(s) {
+  if (!s?.length) return "0";
+  let h = 0;
+  const step = Math.max(1, Math.floor(s.length / 8192));
+  for (let i = 0; i < s.length; i += step) {
+    h = (h * 33 + s.charCodeAt(i)) | 0;
+  }
+  return `${s.length}_${h}`;
+}
+
+function disposeInversePreviewCutterMeshOnly() {
+  if (!inversePreviewCutterMesh) return;
+  inversePreviewCutterMesh.geometry?.dispose?.();
+  inversePreviewCutterMesh.material?.dispose?.();
+  inversePreviewCutterMesh = null;
+}
+
+function clearInversePreviewCutterState() {
+  disposeInversePreviewCutterMeshOnly();
+  inversePreviewCutterCacheKey = "";
+}
+
+/**
+ * Keep a capped `curveSegments` emblem mesh used only as the CSG cutter in inverse preview — export still uses full-density `currentMesh`.
+ * Skips rebuilding when unrelated sliders (lift, emblem offsets…) trigger `rebuild()`.
+ */
+function syncInversePreviewCutterTemplate(opts) {
+  const cappedDensity = Math.min(INVERSE_PREVIEW_CURVE_SEGMENTS_CAP, opts.density);
+  const key = [
+    quickStringFingerprint(svgText),
+    opts.targetSize,
+    opts.thickness,
+    opts.scaleX,
+    opts.scaleY,
+    opts.scaleZ,
+    cappedDensity,
+    opts.autoFix ? 1 : 0,
+    opts.flipX ? 1 : 0,
+    opts.flipY ? 1 : 0,
+  ].join("|");
+
+  if (key === inversePreviewCutterCacheKey) {
+    if (inversePreviewCutterMesh) {
+      inversePreviewCutterMesh.rotation.copy(emblemGizmoEuler);
+      inversePreviewCutterMesh.scale.copy(emblemGizmoScale);
+    }
+    return;
+  }
+
+  disposeInversePreviewCutterMeshOnly();
+  inversePreviewCutterCacheKey = key;
+
+  if (opts.density <= INVERSE_PREVIEW_CURVE_SEGMENTS_CAP) {
+    return;
+  }
+
+  try {
+    const { mesh: previewCutter } = buildMesh(svgText, { ...opts, density: cappedDensity });
+    previewCutter.rotation.copy(emblemGizmoEuler);
+    previewCutter.scale.copy(emblemGizmoScale);
+    inversePreviewCutterMesh = previewCutter;
+  } catch (_e) {
+    inversePreviewCutterMesh = null;
+  }
+}
+
 function rebuild() {
   refreshOutputs();
+  transformControls.detach();
   if (!svgText) {
+    clearInversePreviewCutterState();
     if (currentMesh) {
       scene.remove(currentMesh);
       currentMesh.geometry.dispose();
@@ -1706,6 +1826,9 @@ function rebuild() {
     currentMesh = mesh;
     currentMesh.rotation.copy(emblemGizmoEuler);
     currentMesh.scale.copy(emblemGizmoScale);
+
+    syncInversePreviewCutterTemplate(opts);
+
     composePreview();
     exportBtn.disabled = false;
     exportZipBtn.disabled = uploadedFiles.length === 0;
@@ -1723,6 +1846,7 @@ function rebuild() {
     );
   } catch (err) {
     exportBtn.disabled = true;
+    clearInversePreviewCutterState();
     setStatus(`${t("statusError")}: ${err.message}`);
   }
 }
@@ -2001,11 +2125,10 @@ exportCombinedBtn.addEventListener("click", () => {
     );
     placeEmblem(flatBase, model);
   }
-  // In inverse mode export exactly what preview already shows.
-  let result =
-    inverseModeInput.checked && currentInversePreviewMesh ? cloneMeshInWorldSpace(currentInversePreviewMesh) : null;
+  // Inverse preview uses a coarse cutter mesh; combined export always runs full-density CSG.
+  let result = null;
   try {
-    if (!result) result = buildCombinedMeshForExport(flatBase, model);
+    result = buildCombinedMeshForExport(flatBase, model);
     if (!result) {
       dlog("export.combined.failed", {});
       setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
