@@ -82,9 +82,9 @@ const libraryCategoryInput = document.getElementById("libraryCategory");
 const librarySingleInput = document.getElementById("librarySingle");
 const libraryPreviewBtn = document.getElementById("libraryPreviewBtn");
 const libraryLoadSingleBtn = document.getElementById("libraryLoadSingleBtn");
-const batchLibraryListInput = document.getElementById("batchLibraryList");
 const batchPreviewBtn = document.getElementById("batchPreviewBtn");
-const batchAddLibraryBtn = document.getElementById("batchAddLibraryBtn");
+const batchSelectionList = document.getElementById("batchSelectionList");
+const batchClearSelectionBtn = document.getElementById("batchClearSelectionBtn");
 const libraryPreviewModal = document.getElementById("libraryPreviewModal");
 const libraryPreviewTitle = document.getElementById("libraryPreviewTitle");
 const libraryPreviewMeta = document.getElementById("libraryPreviewMeta");
@@ -113,6 +113,7 @@ let libraryManifest = [];
 let libraryBrowserMode = "single";
 let libraryBrowserCategory = "";
 let libraryBrowserSelectedPath = "";
+let batchLibrarySelectedPaths = new Set();
 let hoverPreviewTimer = null;
 let isFlatView = false;
 let history = [];
@@ -145,7 +146,8 @@ const i18n = {
     cancel: "Cancel",
     loadFromLibrary: "Load from library",
     batchLibrary: "Library SVG (multiple)",
-    batchAddLibrary: "Add selected from library",
+    batchSelection: "Selected batch items",
+    batchClearSelection: "Clear selected",
     svgFile: "SVG file",
     baseStl: "Base STL (optional)",
     generateBase: "Generate round base",
@@ -234,7 +236,8 @@ const i18n = {
     cancel: "Отмена",
     loadFromLibrary: "Загрузить из библиотеки",
     batchLibrary: "SVG из библиотеки (несколько)",
-    batchAddLibrary: "Добавить выбранные из библиотеки",
+    batchSelection: "Выбранные batch элементы",
+    batchClearSelection: "Очистить выбранные",
     svgFile: "SVG файл",
     baseStl: "Основание STL (опционально)",
     generateBase: "Сгенерировать круглое основание",
@@ -495,31 +498,52 @@ function t(key) {
   return i18n[currentLang][key];
 }
 
-function makeVirtualBatchFile(name, svgTextContent) {
+function makeVirtualBatchFile(name, svgTextContent, key = null) {
   return {
+    key,
     name,
     text: async () => svgTextContent,
   };
 }
 
+function renderBatchSelectionList() {
+  batchSelectionList.innerHTML = "";
+  if (batchFiles.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "-";
+    batchSelectionList.appendChild(empty);
+    return;
+  }
+  batchFiles.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "batch-selection-item";
+    row.innerHTML = `<span>${item.name}</span><button type="button">Remove</button>`;
+    row.querySelector("button").addEventListener("click", () => {
+      if (item.key) batchLibrarySelectedPaths.delete(item.key);
+      batchFiles.splice(idx, 1);
+      updateBatchButtonState();
+      renderBatchSelectionList();
+      setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
+    });
+    batchSelectionList.appendChild(row);
+  });
+}
+
 function updateBatchButtonState() {
   batchExportBtn.disabled = batchFiles.length === 0;
+  renderBatchSelectionList();
 }
 
 function updateLibraryItemLists() {
   const category = libraryCategoryInput.value;
   const filtered = libraryManifest.filter((item) => item.category === category);
   librarySingleInput.innerHTML = "";
-  batchLibraryListInput.innerHTML = "";
   for (const item of filtered) {
     const optSingle = document.createElement("option");
     optSingle.value = item.path;
     optSingle.textContent = item.name;
     librarySingleInput.appendChild(optSingle);
-    const optBatch = document.createElement("option");
-    optBatch.value = item.path;
-    optBatch.textContent = item.name;
-    batchLibraryListInput.appendChild(optBatch);
   }
 }
 
@@ -556,6 +580,11 @@ function scheduleHoverPreview(item, mouseEvent) {
 function renderLibraryBrowser() {
   const categories = [...new Set(libraryManifest.map((item) => item.category))].sort((a, b) => a.localeCompare(b));
   if (!libraryBrowserCategory && categories.length) libraryBrowserCategory = categories[0];
+  if (libraryBrowserMode === "batch") {
+    libraryPreviewMeta.textContent = `${t("libraryBrowserCategory")} (${batchLibrarySelectedPaths.size})`;
+  } else {
+    libraryPreviewMeta.textContent = t("libraryBrowserCategory");
+  }
   libraryCategoryList.innerHTML = "";
   for (const category of categories) {
     const btn = document.createElement("button");
@@ -564,7 +593,7 @@ function renderLibraryBrowser() {
     btn.textContent = category;
     btn.addEventListener("click", () => {
       libraryBrowserCategory = category;
-      libraryBrowserSelectedPath = "";
+      if (libraryBrowserMode === "single") libraryBrowserSelectedPath = "";
       renderLibraryBrowser();
     });
     libraryCategoryList.appendChild(btn);
@@ -574,13 +603,20 @@ function renderLibraryBrowser() {
   for (const item of filtered) {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = `library-card${libraryBrowserSelectedPath === item.path ? " active" : ""}`;
+    const isActive = libraryBrowserSelectedPath === item.path;
+    const isBatchPicked = batchLibrarySelectedPaths.has(item.path);
+    card.className = `library-card${isActive ? " active" : ""}${isBatchPicked ? " batch-picked" : ""}`;
     card.innerHTML = `
       <div class="library-thumb"><img src="${item.path}" alt="${item.name}"></div>
       <div class="library-name">${item.name}</div>
     `;
     card.addEventListener("click", () => {
-      libraryBrowserSelectedPath = item.path;
+      if (libraryBrowserMode === "batch") {
+        if (batchLibrarySelectedPaths.has(item.path)) batchLibrarySelectedPaths.delete(item.path);
+        else batchLibrarySelectedPaths.add(item.path);
+      } else {
+        libraryBrowserSelectedPath = item.path;
+      }
       renderLibraryBrowser();
     });
     card.addEventListener("mouseenter", (e) => scheduleHoverPreview(item, e));
@@ -599,10 +635,12 @@ function renderLibraryBrowser() {
 function openLibraryPreview(mode) {
   libraryBrowserMode = mode;
   libraryPreviewTitle.textContent = t("libraryBrowserTitle");
-  libraryPreviewMeta.textContent = t("libraryBrowserCategory");
   libraryPreviewPrimaryBtn.textContent = mode === "single" ? t("libraryBrowserLoad") : t("libraryBrowserAdd");
   libraryPreviewCancelBtn.textContent = t("cancel");
-  libraryBrowserSelectedPath = mode === "single" ? librarySingleInput.value : batchLibraryListInput.selectedOptions?.[0]?.value || "";
+  if (mode === "batch") {
+    batchLibrarySelectedPaths = new Set(batchFiles.map((x) => x.key).filter(Boolean));
+  }
+  libraryBrowserSelectedPath = mode === "single" ? librarySingleInput.value : libraryBrowserSelectedPath;
   libraryBrowserCategory = libraryManifest.find((x) => x.path === libraryBrowserSelectedPath)?.category || libraryCategoryInput.value;
   renderLibraryBrowser();
   libraryPreviewModal.classList.remove("hidden");
@@ -640,8 +678,8 @@ function applyLocale() {
   document.getElementById("libraryPreviewBtn").textContent = t("previewSelected");
   document.getElementById("batchPreviewBtn").textContent = t("previewSelected");
   document.getElementById("libraryLoadSingleBtn").textContent = t("loadFromLibrary");
-  document.getElementById("batchLibraryLabel").textContent = t("batchLibrary");
-  document.getElementById("batchAddLibraryBtn").textContent = t("batchAddLibrary");
+  document.getElementById("batchSelectionLabel").textContent = t("batchSelection");
+  document.getElementById("batchClearSelectionBtn").textContent = t("batchClearSelection");
   document.getElementById("batchFitRatioLabel").textContent = t("batchFitRatio");
   document.getElementById("batchLiftLabel").textContent = t("batchLift");
   document.getElementById("batchInsetLabel").textContent = t("batchInset");
@@ -1772,44 +1810,38 @@ batchPreviewBtn.addEventListener("click", () => {
   openLibraryPreview("batch");
 });
 
-batchAddLibraryBtn.addEventListener("click", async () => {
-  const selected = Array.from(batchLibraryListInput.selectedOptions || []);
-  if (selected.length === 0) return;
-  const added = [];
-  for (const option of selected) {
-    try {
-      const path = option.value;
-      const response = await fetch(path);
-      if (!response.ok) continue;
-      const text = await response.text();
-      const name = path.split("/").pop();
-      added.push(makeVirtualBatchFile(name, text));
-    } catch (_err) {}
-  }
-  batchFiles = [...batchFiles, ...added];
-  updateBatchButtonState();
-  setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
-});
-
 libraryPreviewPrimaryBtn.addEventListener("click", async () => {
-  if (!libraryBrowserSelectedPath) return;
   if (libraryBrowserMode === "single") {
+    if (!libraryBrowserSelectedPath) return;
     await loadLibrarySvgToSingle(libraryBrowserSelectedPath);
     closeLibraryPreview();
     return;
   }
-  try {
-    const response = await fetch(libraryBrowserSelectedPath);
-    if (!response.ok) throw new Error("batch library add failed");
-    const text = await response.text();
-    const name = libraryBrowserSelectedPath.split("/").pop();
-    batchFiles = [...batchFiles, makeVirtualBatchFile(name, text)];
+  const selectedPaths = Array.from(batchLibrarySelectedPaths);
+  if (selectedPaths.length === 0) return;
+  const added = [];
+  for (const path of selectedPaths) {
+    try {
+      const response = await fetch(path);
+      if (!response.ok) continue;
+      const text = await response.text();
+      const name = path.split("/").pop();
+      added.push(makeVirtualBatchFile(name, text, path));
+    } catch (_err) {}
+  }
+  if (added.length > 0) {
+    batchFiles = [...batchFiles, ...added];
     updateBatchButtonState();
     setStatus(`${t("statusBatch")}: ${batchFiles.length}`);
-    closeLibraryPreview();
-  } catch (_err) {
-    setStatus(`${t("statusError")}: library svg load failed`);
   }
+  closeLibraryPreview();
+});
+
+batchClearSelectionBtn.addEventListener("click", () => {
+  batchFiles = [];
+  batchLibrarySelectedPaths.clear();
+  updateBatchButtonState();
+  setStatus(`${t("statusBatch")}: 0`);
 });
 
 libraryPreviewCancelBtn.addEventListener("click", closeLibraryPreview);
@@ -1931,4 +1963,5 @@ createFloatingWindows();
 applyLocale();
 loadLibraryManifest();
 loadFromCache();
+updateBatchButtonState();
 commitHistory();

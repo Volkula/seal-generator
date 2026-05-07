@@ -294,12 +294,12 @@
             <span id="batchInsetLabel">Batch inset depth (inverse, mm)</span>
             <input id="batchInset" type="number" min="0" max="10" step="0.1" value="1.0" />
           </label>
-          <label class="field">
-            <span id="batchLibraryLabel">Library SVG (multiple)</span>
-            <select id="batchLibraryList" multiple size="8"></select>
-          </label>
           <button id="batchPreviewBtn">Open library browser</button>
-          <button id="batchAddLibraryBtn">Add selected from library</button>
+          <label class="field">
+            <span id="batchSelectionLabel">Selected batch items</span>
+            <div id="batchSelectionList" class="batch-selection-list"></div>
+          </label>
+          <button id="batchClearSelectionBtn">Clear selected</button>
           <label class="field">
             <span id="batchSvgLabel">Batch SVG files</span>
             <input id="batchSvgFiles" type="file" accept=".svg,image/svg+xml" multiple />
@@ -337,9 +337,9 @@
           <img id="libraryHoverPreviewImg" alt="Full SVG preview" />
           <p id="libraryHoverPreviewName"></p>
         </div>
-        <div class="row-buttons">
+        <div class="row-buttons modal-actions">
           <button id="libraryPreviewPrimaryBtn" type="button">Load selected</button>
-          <button id="libraryPreviewCancelBtn" type="button">Cancel</button>
+          <button id="libraryPreviewCancelBtn" class="danger" type="button">Cancel</button>
         </div>
       </div>
     </div>
