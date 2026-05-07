@@ -172,6 +172,25 @@ function closeOpenSubpaths(data) {
   }
 }
 
+function applyMirror(geometry, flipX, flipY) {
+  if (!flipX && !flipY) return;
+
+  const sx = flipX ? -1 : 1;
+  const sy = flipY ? -1 : 1;
+  geometry.scale(sx, sy, 1);
+
+  // If we mirror over exactly one axis, triangle winding must be reversed.
+  if (flipX !== flipY && geometry.index) {
+    const idx = geometry.index.array;
+    for (let i = 0; i < idx.length; i += 3) {
+      const t = idx[i + 1];
+      idx[i + 1] = idx[i + 2];
+      idx[i + 2] = t;
+    }
+    geometry.index.needsUpdate = true;
+  }
+}
+
 function buildMesh(svg, opts) {
   const loader = new SVGLoader();
   const data = loader.parse(svg);
@@ -218,10 +237,8 @@ function buildMesh(svg, opts) {
   box2.getCenter(center);
   merged.translate(-center.x, -center.y, -box2.min.z);
 
-  if (opts.flipY) {
-    merged.scale(1, -1, 1);
-    merged.computeVertexNormals();
-  }
+  applyMirror(merged, opts.flipX, opts.flipY);
+  merged.computeVertexNormals();
   if (opts.flipX) {
     merged.scale(-1, 1, 1);
     merged.computeVertexNormals();
