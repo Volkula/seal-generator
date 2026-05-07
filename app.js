@@ -929,8 +929,6 @@ function makeGeneratedBaseMesh() {
       color: 0x8b8b8b,
       metalness: 0.25,
       roughness: 0.75,
-      transparent: true,
-      opacity: 0.95,
     })
   );
 }
@@ -965,15 +963,20 @@ function sanitizeGeometryForMerge(geom) {
 
 /** Merge meshes under root into one world-space mesh for CSG / STL export path. Caller disposes returned mesh after use unless kept in scene. */
 function flattenObject3DToSingleMesh(sourceRoot, materialFallback = null) {
+  return flattenObject3DSubsetToSingleMesh(sourceRoot, () => true, materialFallback);
+}
+
+/** Same as flattenObject3DToSingleMesh but only includes meshes for which includeFn returns true. */
+function flattenObject3DSubsetToSingleMesh(sourceRoot, includeFn, materialFallback = null) {
   sourceRoot?.updateMatrixWorld(true);
   const geoms = [];
   let pickedMat = materialFallback;
   sourceRoot?.traverse?.((child) => {
-    if (child.isMesh && child.geometry) {
-      child.updateMatrixWorld(true);
-      geoms.push(sanitizeGeometryForMerge(child.geometry.clone().applyMatrix4(child.matrixWorld)));
-      if (!pickedMat && child.material) pickedMat = child.material.clone();
-    }
+    if (!child.isMesh || !child.geometry) return;
+    if (!includeFn(child)) return;
+    child.updateMatrixWorld(true);
+    geoms.push(sanitizeGeometryForMerge(child.geometry.clone().applyMatrix4(child.matrixWorld)));
+    if (!pickedMat && child.material) pickedMat = child.material.clone();
   });
   if (!geoms.length) return null;
   const merged = geoms.length === 1 ? geoms[0] : mergeGeometries(geoms, false);
@@ -1017,10 +1020,12 @@ function buildComposableBaseRoot(options = {}) {
   let stl = null;
   if (hasCyl) {
     cyl = makeGeneratedBaseMesh();
+    cyl.userData.role = "cyl";
     group.add(cyl);
   }
   if (hasStl) {
     stl = uploadedBaseMesh.clone();
+    stl.userData.role = "stlAddon";
     const s = clampNumber(Number(stlAddonScaleInput.value ?? 1), 0.05, 5);
     stl.scale.set(s, s, s);
     stl.updateMatrixWorld(true);
@@ -1044,6 +1049,43 @@ function buildComposableBaseRoot(options = {}) {
   }
   group.updateMatrixWorld(true);
   return group;
+}
+
+/** Predicate: only the disk part of the composed base is cuttable for inverse mode. STL addon is preserved as-is. */
+function isCuttableBaseChild(child) {
+  if (!child?.isMesh) return false;
+  // STL addon: protected from CSG.
+  if (child.userData?.role === "stlAddon") return false;
+  return true;
+}
+
+function isStlAddonBaseChild(child) {
+  return !!child?.isMesh && child.userData?.role === "stlAddon";
+}
+
+/** True when both disk and STL addon are present in the composed base — inverse needs to split them. */
+function baseHasBothCylAndAddon(root) {
+  if (!root) return false;
+  let hasCyl = false;
+  let hasStl = false;
+  root.traverse((c) => {
+    if (!c.isMesh) return;
+    if (c.userData?.role === "cyl") hasCyl = true;
+    else if (c.userData?.role === "stlAddon") hasStl = true;
+  });
+  return hasCyl && hasStl;
+}
+
+/** Force material fully opaque so CSG result and base previews don't ghost out. */
+function forceMaterialOpaque(material) {
+  if (!material) return;
+  const mats = Array.isArray(material) ? material : [material];
+  for (const m of mats) {
+    m.transparent = false;
+    m.opacity = 1.0;
+    m.depthWrite = true;
+    m.needsUpdate = true;
+  }
 }
 
 /** Fallback for batch / probing when compose returns null — single procedural disk at origin */
@@ -1275,8 +1317,7 @@ function getBaseFitTargetSize() {
 function disposeCurrentInversePreviewMesh() {
   if (!currentInversePreviewMesh) return;
   scene.remove(currentInversePreviewMesh);
-  currentInversePreviewMesh.geometry?.dispose?.();
-  currentInversePreviewMesh.material?.dispose?.();
+  disposeObjectGeometryTree(currentInversePreviewMesh);
   currentInversePreviewMesh = null;
 }
 
@@ -1334,12 +1375,14 @@ function rebuildInverseCombinedMesh(options = {}) {
   transformControls.detach();
   disposeCurrentInversePreviewMesh();
 
-  const flatBase = flattenObject3DToSingleMesh(currentBaseMesh);
-  if (!flatBase) {
+  // Inverse cuts the disk only — STL addon stays whole and is reattached after CSG.
+  const flatCuttable = flattenObject3DSubsetToSingleMesh(currentBaseMesh, isCuttableBaseChild);
+  if (!flatCuttable) {
     applyInverseModeBaseFallbackVisual(currentBaseMesh);
     if (!skipGizmoUpdate) updateGizmoTarget();
     return;
   }
+  forceMaterialOpaque(flatCuttable.material);
 
   const cutterTemplate = inversePreviewCutterMesh || currentMesh;
   const previewCutter = cutterTemplate === currentMesh ? currentMesh.clone() : cutterTemplate.clone(true);
@@ -1348,29 +1391,40 @@ function rebuildInverseCombinedMesh(options = {}) {
   previewCutter.scale.copy(currentMesh.scale);
   previewCutter.updateMatrixWorld(true);
 
-  let previewCombined = null;
+  let cutResult = null;
   try {
-    previewCombined = buildCombinedMeshForExport(flatBase, previewCutter, null, true);
+    cutResult = buildCombinedMeshForExport(flatCuttable, previewCutter, null, true);
   } finally {
-    flatBase.geometry.dispose();
-    flatBase.material.dispose();
+    flatCuttable.geometry.dispose();
+    flatCuttable.material.dispose();
     if (cutterTemplate === inversePreviewCutterMesh) {
       previewCutter.geometry.dispose?.();
       previewCutter.material?.dispose?.();
     }
   }
 
-  if (!previewCombined) {
+  if (!cutResult) {
     applyInverseModeBaseFallbackVisual(currentBaseMesh);
     if (!skipGizmoUpdate) updateGizmoTarget();
     return;
   }
+  forceMaterialOpaque(cutResult.material);
+
+  // Wrap CSG-cut disk + untouched STL addon clone into a single preview group.
+  const previewRoot = new THREE.Group();
+  previewRoot.name = "inversePreview";
+  previewRoot.add(cutResult);
+  const stlAddonClone = flattenObject3DSubsetToSingleMesh(currentBaseMesh, isStlAddonBaseChild);
+  if (stlAddonClone) {
+    forceMaterialOpaque(stlAddonClone.material);
+    previewRoot.add(stlAddonClone);
+  }
 
   applyInverseModeBaseReferenceVisual(currentBaseMesh);
-  setWireframe(previewCombined);
-  previewCombined.renderOrder = 10;
-  scene.add(previewCombined);
-  currentInversePreviewMesh = previewCombined;
+  setWireframe(previewRoot);
+  previewRoot.renderOrder = 10;
+  scene.add(previewRoot);
+  currentInversePreviewMesh = previewRoot;
   if (!skipGizmoUpdate) updateGizmoTarget();
 }
 
@@ -1388,8 +1442,7 @@ function composePreview() {
   if (currentMesh) scene.remove(currentMesh);
   if (currentInversePreviewMesh) {
     scene.remove(currentInversePreviewMesh);
-    currentInversePreviewMesh.geometry?.dispose?.();
-    currentInversePreviewMesh.material?.dispose?.();
+    disposeObjectGeometryTree(currentInversePreviewMesh);
     currentInversePreviewMesh = null;
   }
   if (currentBaseMesh) {
@@ -1935,8 +1988,6 @@ baseStlFileInput.addEventListener("change", async (e) => {
       color: 0x8b8b8b,
       metalness: 0.25,
       roughness: 0.75,
-      transparent: true,
-      opacity: 0.95,
     })
   );
   rebuild();
@@ -2132,19 +2183,27 @@ exportCombinedBtn.addEventListener("click", () => {
   if (!currentMesh) {
     return;
   }
-  let flatBase = null;
+  const inverse = inverseModeInput.checked;
+  /** Cuttable part = disk only (or whole base if there is no separate STL addon). STL addon stays whole. */
+  let flatCuttable = null;
+  let stlAddonClone = null;
   if (currentBaseMesh) {
-    flatBase = flattenObject3DToSingleMesh(currentBaseMesh);
+    if (inverse && baseHasBothCylAndAddon(currentBaseMesh)) {
+      flatCuttable = flattenObject3DSubsetToSingleMesh(currentBaseMesh, isCuttableBaseChild);
+      stlAddonClone = flattenObject3DSubsetToSingleMesh(currentBaseMesh, isStlAddonBaseChild);
+    } else {
+      flatCuttable = flattenObject3DToSingleMesh(currentBaseMesh);
+    }
   } else {
     const r = proceduralDiskOnlyRoot();
-    flatBase = flattenObject3DToSingleMesh(r);
+    flatCuttable = flattenObject3DToSingleMesh(r);
     disposeObjectGeometryTree(r);
   }
-  if (!flatBase) return;
+  if (!flatCuttable) return;
   dlog("export.combined.click", {
     hasMesh: !!currentMesh,
-    hasBase: !!flatBase,
-    inverse: inverseModeInput.checked,
+    hasBase: !!flatCuttable,
+    inverse,
     offsets: {
       base: [baseOffsetXInput.value, baseOffsetYInput.value, baseOffsetZInput.value],
       emblem: [emblemOffsetXInput.value, emblemOffsetYInput.value, emblemOffsetZInput.value],
@@ -2154,17 +2213,17 @@ exportCombinedBtn.addEventListener("click", () => {
   });
   const model = cloneMeshInWorldSpace(currentMesh) || currentMesh.clone();
   if (!currentBaseMesh) {
-    flatBase.position.set(
+    flatCuttable.position.set(
       Number(baseOffsetXInput.value),
       Number(baseOffsetYInput.value),
       Number(baseOffsetZInput.value)
     );
-    placeEmblem(flatBase, model);
+    placeEmblem(flatCuttable, model);
   }
   // Inverse preview uses a coarse cutter mesh; combined export always runs full-density CSG.
   let result = null;
   try {
-    result = buildCombinedMeshForExport(flatBase, model);
+    result = buildCombinedMeshForExport(flatCuttable, model, null, false);
     if (!result) {
       dlog("export.combined.failed", {});
       setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
@@ -2173,8 +2232,17 @@ exportCombinedBtn.addEventListener("click", () => {
     dlog("export.combined.success", {
       resultBox: boxInfo(result),
     });
+    // If we ran inverse-with-stl-addon, glue the untouched STL on top of the cut disk.
+    let exportObject = result;
+    if (inverse && stlAddonClone) {
+      const exportRoot = new THREE.Group();
+      exportRoot.add(result);
+      exportRoot.add(stlAddonClone);
+      stlAddonClone = null; // ownership handed to exportRoot
+      exportObject = exportRoot;
+    }
     const exporter = new STLExporter();
-    const stl = exporter.parse(result, { binary: false });
+    const stl = exporter.parse(exportObject, { binary: false });
     const blob = new Blob([stl], { type: "model/stl" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -2183,8 +2251,12 @@ exportCombinedBtn.addEventListener("click", () => {
     a.click();
     URL.revokeObjectURL(url);
   } finally {
-    flatBase.geometry.dispose();
-    flatBase.material.dispose();
+    flatCuttable.geometry.dispose();
+    flatCuttable.material.dispose();
+    if (stlAddonClone) {
+      stlAddonClone.geometry?.dispose?.();
+      stlAddonClone.material?.dispose?.();
+    }
   }
 });
 
@@ -2219,30 +2291,51 @@ exportZipBtn.addEventListener("click", async () => {
   setStatus(`${t("statusBatch")}: ${batchFiles.length}\nProcessing...`);
 
   for (const file of batchFiles) {
+    let activeCuttable = null;
+    let stlAddonClone = null;
+    let mesh = null;
     try {
       const text = await file.text();
-      const { mesh } = buildMesh(text, opts);
-      let baseRoot = buildComposableBaseRoot({ omitBaseOffset: true });
-      if (!baseRoot) baseRoot = proceduralDiskOnlyRoot();
-      const activeBase = flattenObject3DToSingleMesh(baseRoot);
+      mesh = buildMesh(text, opts).mesh;
+      const baseRoot = buildComposableBaseRoot({ omitBaseOffset: true }) || proceduralDiskOnlyRoot();
+      const splitForInverse = inverse && baseHasBothCylAndAddon(baseRoot);
+      if (splitForInverse) {
+        activeCuttable = flattenObject3DSubsetToSingleMesh(baseRoot, isCuttableBaseChild);
+        stlAddonClone = flattenObject3DSubsetToSingleMesh(baseRoot, isStlAddonBaseChild);
+      } else {
+        activeCuttable = flattenObject3DToSingleMesh(baseRoot);
+      }
       disposeObjectGeometryTree(baseRoot);
-      if (!activeBase) throw new Error("Batch base build failed");
-      activeBase.position.set(0, 0, 0);
-      placeEmblem(activeBase, mesh, inverse, batchLift, batchInset);
-      const combined = buildCombinedMeshForExport(activeBase, mesh, inverse);
+      if (!activeCuttable) throw new Error("Batch base build failed");
+      activeCuttable.position.set(0, 0, 0);
+      placeEmblem(activeCuttable, mesh, inverse, batchLift, batchInset);
+      const combined = buildCombinedMeshForExport(activeCuttable, mesh, inverse);
       if (!combined) throw new Error("Batch combined export failed (CSG returned null)");
-      const stl = exporter.parse(combined, { binary: false });
+
+      let exportObject = combined;
+      if (splitForInverse && stlAddonClone) {
+        const exportRoot = new THREE.Group();
+        exportRoot.add(combined);
+        exportRoot.add(stlAddonClone);
+        stlAddonClone = null;
+        exportObject = exportRoot;
+      }
+
+      const stl = exporter.parse(exportObject, { binary: false });
       const name = file.name.replace(/\.svg$/i, "") || "model";
       zip.file(`${name}_with_base.stl`, stl);
       success += 1;
-      activeBase.geometry.dispose();
-      activeBase.material.dispose();
-      mesh.geometry.dispose();
-      mesh.material.dispose();
     } catch (err) {
       failures.push(`${file.name}: ${err?.message || err}`);
       // eslint-disable-next-line no-console
       console.error("[seal-generator] batch export failure", file.name, err);
+    } finally {
+      activeCuttable?.geometry?.dispose?.();
+      activeCuttable?.material?.dispose?.();
+      stlAddonClone?.geometry?.dispose?.();
+      stlAddonClone?.material?.dispose?.();
+      mesh?.geometry?.dispose?.();
+      mesh?.material?.dispose?.();
     }
   }
 
