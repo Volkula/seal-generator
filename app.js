@@ -1146,6 +1146,7 @@ function cloneMeshInWorldSpace(mesh) {
   return cloned;
 }
 
+/** Max XY span of current base footprint (for STL-only / non-disk bases). Disk-on uses baseDiameter separately. */
 function getEffectiveBaseDiameterXY() {
   const composite = buildComposableBaseRoot();
   const cylinderFallback = composite ? null : makeGeneratedBaseMesh();
@@ -1161,6 +1162,18 @@ function getEffectiveBaseDiameterXY() {
   return Math.max(size.x, size.y, 1e-6);
 }
 
+/**
+ * Reference span (mm) for fitting emblem XY to base: inscribed square side (D / √2) on a round disk;
+ * STL-only layouts use bbox XY footprint.
+ */
+function emblemFitReferenceSpanMm() {
+  if (generateBaseInput.checked) {
+    const d = clampNumber(Number(baseDiameterInput.value || 40), 10, 200);
+    return d / Math.SQRT2;
+  }
+  return getEffectiveBaseDiameterXY();
+}
+
 /** 0–45 (%): inward margin subtracted once from usable diameter scale (default 10 => 90% of base-wide fit). */
 function getFitInsetScaleFromUI() {
   const p = clampNumber(Number(fitInsetPctInput?.value ?? 10), 0, 45);
@@ -1170,8 +1183,8 @@ function getFitInsetScaleFromUI() {
 /** Target emblem max XY dimension (mm) for fitting to base with configured edge margin. */
 function getEmblemTargetSizeForCurrentBase(options = {}) {
   const insetScale = typeof options.insetScale === "number" ? options.insetScale : getFitInsetScaleFromUI();
-  const diameter = getEffectiveBaseDiameterXY();
-  return clampNumber(Math.floor(diameter * insetScale), 10, 200);
+  const span = emblemFitReferenceSpanMm();
+  return clampNumber(Math.floor(span * insetScale), 10, 200);
 }
 
 function getBaseFitTargetSize() {
