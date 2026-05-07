@@ -621,8 +621,8 @@ function placeEmblem(baseMesh, emblemMesh) {
       const targetDepth = Math.max(inset, 0.05);
       emblemMesh.scale.z *= targetDepth / currentDepth;
       emblemBox = new THREE.Box3().setFromObject(emblemMesh);
-      // Ensure cutter intersects base (slightly below top surface).
-      const desiredTop = baseBox.max.z - 0.001;
+      // In inverse mode, keep cutter placement aligned with user-visible position.
+      const desiredTop = baseBox.max.z + lift;
       emblemMesh.position.z += desiredTop - emblemBox.max.z;
     } else {
       emblemMesh.position.z = baseBox.max.z + lift - emblemBox.min.z;
@@ -688,7 +688,8 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   };
 
   try {
-    const result = attempt(0) || attempt(0.2) || attempt(1.0);
+    // Keep fallback nudges shallow so exported cut matches user placement.
+    const result = attempt(0) || attempt(0.02) || attempt(0.06);
     if (result) {
       dlog("inverse.export.end", { success: true, method: "bvh-csg" });
       return result;
