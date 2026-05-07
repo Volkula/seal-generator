@@ -269,6 +269,19 @@
           <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
           <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
       </section>
+
+      <section id="batchWindowContent" class="floating-content">
+          <h3 id="batchSectionLabel">Batch</h3>
+          <label class="field">
+            <span id="batchSvgLabel">Batch SVG files</span>
+            <input id="batchSvgFiles" type="file" accept=".svg,image/svg+xml" multiple />
+          </label>
+          <label class="field checkbox">
+            <input id="batchInverseMode" type="checkbox" />
+            <span id="batchInverseLabel">Batch inverse mode</span>
+          </label>
+          <button id="batchExportBtn" disabled>Export Batch ZIP (fit to base)</button>
+      </section>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js"></script>

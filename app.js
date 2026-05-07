@@ -71,6 +71,10 @@ const selectedObjectLabel = document.getElementById("selectedObjectLabel");
 const statusEl = document.getElementById("status");
 const modelWindowContent = document.getElementById("modelWindowContent");
 const baseWindowContent = document.getElementById("baseWindowContent");
+const batchWindowContent = document.getElementById("batchWindowContent");
+const batchSvgFilesInput = document.getElementById("batchSvgFiles");
+const batchInverseModeInput = document.getElementById("batchInverseMode");
+const batchExportBtn = document.getElementById("batchExportBtn");
 
 const densityOut = document.getElementById("densityOut");
 
@@ -82,6 +86,7 @@ let currentInversePreviewMesh = null;
 let uploadedBaseMesh = null;
 let currentLang = "en";
 let uploadedFiles = [];
+let batchFiles = [];
 let isFlatView = false;
 let history = [];
 let historyIndex = -1;
@@ -92,6 +97,7 @@ let gizmoModeIndex = 0;
 let selectedObjectType = "emblem";
 let modelWindow = null;
 let baseWindow = null;
+let batchWindow = null;
 const DEBUG = true;
 
 const i18n = {
@@ -142,7 +148,11 @@ const i18n = {
     clearCache: "Clear Cache",
     modelSection: "Model",
     baseSection: "Base",
+    batchSection: "Batch",
     viewSection: "View & Export",
+    batchSvg: "Batch SVG files",
+    batchInverse: "Inverse mode for batch",
+    batchExport: "Export Batch ZIP (fit to base)",
     box1: "1. Gizmo & View",
     box2: "2. Selected Object",
     selectedPrefix: "Selected",
@@ -212,7 +222,11 @@ const i18n = {
     clearCache: "Очистить кэш",
     modelSection: "Модель",
     baseSection: "Основание",
+    batchSection: "Пакетный режим",
     viewSection: "Вид и экспорт",
+    batchSvg: "SVG файлы для batch",
+    batchInverse: "Inverse режим для batch",
+    batchExport: "Экспорт Batch ZIP (под размер базы)",
     box1: "1. Гизмо и отображение",
     box2: "2. Выбранный объект",
     selectedPrefix: "Выбрано",
@@ -309,7 +323,7 @@ function setStatus(text) {
 }
 
 function createFloatingWindows() {
-  if (typeof WinBox === "undefined" || !modelWindowContent || !baseWindowContent) return;
+  if (typeof WinBox === "undefined" || !modelWindowContent || !baseWindowContent || !batchWindowContent) return;
   modelWindow = new WinBox({
     title: t("modelSection"),
     class: "sg-window",
@@ -328,11 +342,21 @@ function createFloatingWindows() {
     height: 575,
     mount: baseWindowContent,
   });
+  batchWindow = new WinBox({
+    title: t("batchSection"),
+    class: "sg-window",
+    x: 764,
+    y: 44,
+    width: 236,
+    height: 260,
+    mount: batchWindowContent,
+  });
 }
 
 function updateWindowTitles() {
   if (modelWindow) modelWindow.setTitle(t("modelSection"));
   if (baseWindow) baseWindow.setTitle(t("baseSection"));
+  if (batchWindow) batchWindow.setTitle(t("batchSection"));
 }
 
 function dlog(step, details = {}) {
@@ -423,10 +447,12 @@ function applyLocale() {
   document.getElementById("sidebarSideLabel").textContent = t("sidebarSide");
   document.getElementById("modelSectionLabel").textContent = t("modelSection");
   document.getElementById("baseSectionLabel").textContent = t("baseSection");
+  document.getElementById("batchSectionLabel").textContent = t("batchSection");
   document.getElementById("viewSectionLabel").textContent = t("viewSection");
   document.getElementById("box1Label").textContent = t("box1");
   document.getElementById("box2Label").textContent = t("box2");
   document.getElementById("svgFileLabel").textContent = t("svgFile");
+  document.getElementById("batchSvgLabel").textContent = t("batchSvg");
   document.getElementById("baseStlLabel").textContent = t("baseStl");
   document.getElementById("generateBaseLabel").textContent = t("generateBase");
   document.getElementById("baseDiameterLabel").textContent = t("baseDiameter");
@@ -449,6 +475,7 @@ function applyLocale() {
   document.getElementById("flipYLabel").textContent = t("flipY");
   document.getElementById("flipXLabel").textContent = t("flipX");
   document.getElementById("inverseModeLabel").textContent = t("inverseMode");
+  document.getElementById("batchInverseLabel").textContent = t("batchInverse");
   document.getElementById("wireframeModeLabel").textContent = t("wireframeMode");
   document.getElementById("gizmoEnabledLabel").textContent = t("gizmoEnabled");
   document.getElementById("gizmoTargetLabel").textContent = t("gizmoTarget");
@@ -456,6 +483,7 @@ function applyLocale() {
   document.getElementById("exportBtn").textContent = t("export");
   document.getElementById("exportCombinedBtn").textContent = t("exportCombined");
   document.getElementById("exportZipBtn").textContent = t("exportZip");
+  document.getElementById("batchExportBtn").textContent = t("batchExport");
   document.getElementById("fitBaseToEmblemBtn").textContent = t("fitBaseToEmblem");
   document.getElementById("fitEmblemToBaseBtn").textContent = t("fitEmblemToBase");
   document.getElementById("undoBtn").textContent = t("undo");
@@ -608,10 +636,10 @@ function updateGizmoTarget() {
   }
 }
 
-function placeEmblem(baseMesh, emblemMesh) {
+function placeEmblem(baseMesh, emblemMesh, inverseOverride = null) {
   const lift = Number(liftInput.value);
   const inset = Number(insetInput.value);
-  const inverse = inverseModeInput.checked;
+  const inverse = inverseOverride === null ? inverseModeInput.checked : !!inverseOverride;
   emblemMesh.position.set(0, 0, 0);
   const baseBox = baseMesh ? new THREE.Box3().setFromObject(baseMesh) : null;
   let emblemBox = new THREE.Box3().setFromObject(emblemMesh);
@@ -633,13 +661,14 @@ function placeEmblem(baseMesh, emblemMesh) {
   emblemMesh.position.z += Number(emblemOffsetZInput.value);
 }
 
-function buildCombinedMeshForExport(baseMesh, emblemMesh) {
+function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null) {
+  const inverseMode = inverseOverride === null ? inverseModeInput.checked : !!inverseOverride;
   dlog("inverse.export.start", {
-    inverse: inverseModeInput.checked,
+    inverse: inverseMode,
     baseBox: boxInfo(baseMesh),
     emblemBox: boxInfo(emblemMesh),
   });
-  if (!inverseModeInput.checked) {
+  if (!inverseMode) {
     const group = new THREE.Group();
     group.add(baseMesh);
     group.add(emblemMesh);
@@ -733,6 +762,17 @@ function cloneMeshInWorldSpace(mesh) {
   cloned.scale.set(1, 1, 1);
   cloned.updateMatrixWorld(true);
   return cloned;
+}
+
+function getBaseFitTargetSize() {
+  const baseProbe = getActiveBaseMesh() || makeGeneratedBaseMesh();
+  const box = new THREE.Box3().setFromObject(baseProbe);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  baseProbe.geometry?.dispose?.();
+  baseProbe.material?.dispose?.();
+  const diameter = Math.max(size.x, size.y, 10);
+  return clampNumber(Math.floor(diameter * 0.9), 10, 200);
 }
 
 function composePreview() {
@@ -1432,12 +1472,14 @@ exportCombinedBtn.addEventListener("click", () => {
 });
 
 exportZipBtn.addEventListener("click", async () => {
-  if (!uploadedFiles.length) {
+  if (!batchFiles.length) {
     return;
   }
 
+  const inverse = !!batchInverseModeInput.checked;
+  const fitSize = getBaseFitTargetSize();
   const opts = {
-    targetSize: Number(sizeInput.value),
+    targetSize: fitSize,
     thickness: Number(thicknessInput.value),
     scaleX: Number(scaleXInput.value),
     scaleY: Number(scaleYInput.value),
@@ -1452,16 +1494,23 @@ exportZipBtn.addEventListener("click", async () => {
   const exporter = new STLExporter();
   let success = 0;
 
-  setStatus(`${t("statusBatch")}: ${uploadedFiles.length}\nProcessing...`);
+  setStatus(`${t("statusBatch")}: ${batchFiles.length}\nProcessing...`);
 
-  for (const file of uploadedFiles) {
+  for (const file of batchFiles) {
     try {
       const text = await file.text();
       const { mesh } = buildMesh(text, opts);
-      const stl = exporter.parse(mesh, { binary: false });
+      const activeBase = getActiveBaseMesh() || makeGeneratedBaseMesh();
+      activeBase.position.set(0, 0, 0);
+      placeEmblem(activeBase, mesh, inverse);
+      const combined = buildCombinedMeshForExport(activeBase, mesh, inverse);
+      if (!combined) throw new Error("Batch combined export failed");
+      const stl = exporter.parse(combined, { binary: false });
       const name = file.name.replace(/\.svg$/i, "") || "model";
-      zip.file(`${name}.stl`, stl);
+      zip.file(`${name}_with_base.stl`, stl);
       success += 1;
+      activeBase.geometry.dispose();
+      activeBase.material.dispose();
       mesh.geometry.dispose();
       mesh.material.dispose();
     } catch (err) {
@@ -1482,8 +1531,15 @@ exportZipBtn.addEventListener("click", async () => {
   a.click();
   URL.revokeObjectURL(url);
 
-  setStatus(`${t("statusBatch")}: ${uploadedFiles.length}\nConverted: ${success}`);
+  setStatus(`${t("statusBatch")}: ${batchFiles.length}\nConverted: ${success}`);
 });
+
+batchSvgFilesInput.addEventListener("change", (e) => {
+  batchFiles = Array.from(e.target.files || []);
+  batchExportBtn.disabled = batchFiles.length === 0;
+});
+
+batchExportBtn.addEventListener("click", () => exportZipBtn.click());
 
 flatViewBtn.addEventListener("click", () => {
   setFlatView(!isFlatView);
