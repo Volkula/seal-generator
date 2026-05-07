@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Seal Generator</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css" />
     <link rel="stylesheet" href="./styles.css" />
     <script type="importmap">
       {
@@ -144,10 +145,11 @@
       </p>
     </aside>
 
-    <main id="viewport">
-      <div class="floating-panels">
-        <details class="accordion float-panel model-panel" open>
-          <summary id="modelSectionLabel">Model</summary>
+    <main id="viewport"></main>
+
+    <div id="floatingPanelsSource">
+      <section id="modelWindowContent" class="floating-content">
+        <h3 id="modelSectionLabel">Model</h3>
           <label class="field">
             <span id="svgFileLabel">SVG file</span>
             <input id="svgFile" type="file" accept=".svg,image/svg+xml" multiple />
@@ -218,10 +220,10 @@
             <input id="inverseMode" type="checkbox" />
             <span id="inverseModeLabel">Inverse (negative stamp)</span>
           </label>
-        </details>
+      </section>
 
-        <details class="accordion float-panel base-panel" open>
-          <summary id="baseSectionLabel">Base</summary>
+      <section id="baseWindowContent" class="floating-content">
+          <h3 id="baseSectionLabel">Base</h3>
           <label class="field">
             <span id="baseStlLabel">Base STL (optional)</span>
             <input id="baseStlFile" type="file" accept=".stl,model/stl" />
@@ -266,10 +268,10 @@
 
           <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
           <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
-        </details>
-      </div>
-    </main>
+      </section>
+    </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js"></script>
     <script type="module" src="./app.js"></script>
   </body>
   </html>

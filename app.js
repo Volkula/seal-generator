@@ -69,6 +69,8 @@ const emblemOffsetGroup = document.getElementById("emblemOffsetGroup");
 const baseOffsetGroup = document.getElementById("baseOffsetGroup");
 const selectedObjectLabel = document.getElementById("selectedObjectLabel");
 const statusEl = document.getElementById("status");
+const modelWindowContent = document.getElementById("modelWindowContent");
+const baseWindowContent = document.getElementById("baseWindowContent");
 
 const densityOut = document.getElementById("densityOut");
 
@@ -88,6 +90,8 @@ const csgEvaluator = new Evaluator();
 const gizmoModes = ["translate", "rotate", "scale"];
 let gizmoModeIndex = 0;
 let selectedObjectType = "emblem";
+let modelWindow = null;
+let baseWindow = null;
 const DEBUG = true;
 
 const i18n = {
@@ -304,6 +308,33 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+function createFloatingWindows() {
+  if (typeof WinBox === "undefined" || !modelWindowContent || !baseWindowContent) return;
+  modelWindow = new WinBox({
+    title: t("modelSection"),
+    class: ["sg-window", "no-full", "no-max", "no-min", "no-resize"],
+    x: 272,
+    y: 10,
+    width: 250,
+    height: 560,
+    mount: modelWindowContent,
+  });
+  baseWindow = new WinBox({
+    title: t("baseSection"),
+    class: ["sg-window", "no-full", "no-max", "no-min", "no-resize"],
+    x: 532,
+    y: 10,
+    width: 250,
+    height: 520,
+    mount: baseWindowContent,
+  });
+}
+
+function updateWindowTitles() {
+  if (modelWindow) modelWindow.setTitle(t("modelSection"));
+  if (baseWindow) baseWindow.setTitle(t("baseSection"));
+}
+
 function dlog(step, details = {}) {
   if (!DEBUG) return;
   const ts = new Date().toISOString();
@@ -433,6 +464,7 @@ function applyLocale() {
   document.getElementById("clearCacheBtn").textContent = t("clearCache");
   document.getElementById("flatViewBtn").textContent = isFlatView ? t("perspectiveView") : t("flatView");
   document.getElementById("licenseNote").textContent = t("license");
+  updateWindowTitles();
   updateSelectedObjectUI();
   if (!svgText) {
     setStatus(t("statusIdle"));
@@ -1545,6 +1577,7 @@ applyTheme("dark");
 document.body.dataset.sidebar = "left";
 setGizmoMode("translate");
 gizmoEnabledInput.checked = true;
+createFloatingWindows();
 applyLocale();
 loadFromCache();
 commitHistory();

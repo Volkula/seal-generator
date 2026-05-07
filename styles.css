@@ -302,33 +302,41 @@ button:disabled {
   position: relative;
 }
 
-.floating-panels {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 5;
-  display: grid;
-  grid-template-columns: 220px 220px;
-  gap: 8px;
-  pointer-events: none;
+#floatingPanelsSource {
+  display: none;
 }
 
-.float-panel {
-  pointer-events: auto;
-  max-height: calc(100vh - 24px);
-  overflow: auto;
-  background: linear-gradient(180deg, #12131adb 0%, #181a23db 100%);
-  backdrop-filter: blur(2px);
+.floating-content {
+  padding: 8px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.floating-content h3 {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.wb.sg-window {
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 24px #00000055;
+}
+
+.wb.sg-window .wb-header {
+  background: linear-gradient(180deg, #1f2634, #131926);
+  color: var(--text);
+}
+
+.wb.sg-window .wb-body {
+  background: linear-gradient(180deg, #12131af0, #181a23f0);
+  backdrop-filter: blur(3px);
 }
 
 @media (max-width: 1280px) {
   body,
   body[data-sidebar="right"] {
     grid-template-columns: 340px 1fr;
-  }
-  .floating-panels {
-    grid-template-columns: 1fr;
-    right: 10px;
-    left: 10px;
   }
 }
