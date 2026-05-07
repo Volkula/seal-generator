@@ -87,6 +87,7 @@ const csgEvaluator = new Evaluator();
 const gizmoModes = ["translate", "rotate", "scale"];
 let gizmoModeIndex = 0;
 let selectedObjectType = "emblem";
+const DEBUG = true;
 
 const i18n = {
   en: {
@@ -300,6 +301,24 @@ scene.add(grid);
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function dlog(step, details = {}) {
+  if (!DEBUG) return;
+  const ts = new Date().toISOString();
+  // eslint-disable-next-line no-console
+  console.log(`[seal-generator][${ts}] ${step}`, details);
+}
+
+function boxInfo(meshOrGeom) {
+  const box = meshOrGeom.isBufferGeometry
+    ? (meshOrGeom.computeBoundingBox(), meshOrGeom.boundingBox)
+    : new THREE.Box3().setFromObject(meshOrGeom);
+  if (!box) return null;
+  return {
+    min: [box.min.x, box.min.y, box.min.z].map((v) => Number(v.toFixed(4))),
+    max: [box.max.x, box.max.y, box.max.z].map((v) => Number(v.toFixed(4))),
+  };
 }
 
 function updateSelectedObjectUI() {
@@ -524,6 +543,11 @@ function placeEmblem(baseMesh, emblemMesh) {
 }
 
 function buildCombinedMeshForExport(baseMesh, emblemMesh) {
+  dlog("inverse.export.start", {
+    inverse: inverseModeInput.checked,
+    baseBox: boxInfo(baseMesh),
+    emblemBox: boxInfo(emblemMesh),
+  });
   if (!inverseModeInput.checked) {
     const group = new THREE.Group();
     group.add(baseMesh);
@@ -539,8 +563,15 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
   if (cutWorldBase.index) cutWorldBase = cutWorldBase.toNonIndexed();
   baseWorld = mergeVertices(baseWorld, 1e-5);
   cutWorldBase = mergeVertices(cutWorldBase, 1e-5);
+  dlog("inverse.export.normalized", {
+    baseVerts: baseWorld.attributes?.position?.count || 0,
+    cutVerts: cutWorldBase.attributes?.position?.count || 0,
+    baseBox: boxInfo(baseWorld),
+    cutBox: boxInfo(cutWorldBase),
+  });
 
   const attempt = (extraDepth) => {
+    dlog("inverse.export.attempt.begin", { extraDepth });
     const cutWorld = cutWorldBase.clone();
     if (extraDepth > 0) {
       cutWorld.translate(0, 0, -extraDepth);
@@ -551,14 +582,22 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh) {
     cutBrush.updateMatrixWorld(true);
     const subtracted = csgEvaluator.evaluate(baseBrush, cutBrush, SUBTRACTION);
     const vertCount = subtracted?.geometry?.attributes?.position?.count || 0;
+    dlog("inverse.export.attempt.result", {
+      extraDepth,
+      vertCount,
+      resultBox: vertCount ? boxInfo(subtracted) : null,
+    });
     if (vertCount === 0) return null;
     subtracted.material = baseMesh.material.clone();
     return subtracted;
   };
 
   try {
-    return attempt(0) || attempt(0.2) || attempt(1.0);
+    const result = attempt(0) || attempt(0.2) || attempt(1.0);
+    dlog("inverse.export.end", { success: !!result });
+    return result;
   } catch (_err) {
+    dlog("inverse.export.exception", { message: String(_err) });
     return null;
   }
 }
@@ -1216,6 +1255,17 @@ exportCombinedBtn.addEventListener("click", () => {
   }
   const activeBase = getActiveBaseMesh();
   if (!activeBase) return;
+  dlog("export.combined.click", {
+    hasMesh: !!currentMesh,
+    hasBase: !!activeBase,
+    inverse: inverseModeInput.checked,
+    offsets: {
+      base: [baseOffsetXInput.value, baseOffsetYInput.value, baseOffsetZInput.value],
+      emblem: [emblemOffsetXInput.value, emblemOffsetYInput.value, emblemOffsetZInput.value],
+    },
+    lift: liftInput.value,
+    inset: insetInput.value,
+  });
   activeBase.position.set(
     Number(baseOffsetXInput.value),
     Number(baseOffsetYInput.value),
@@ -1226,12 +1276,19 @@ exportCombinedBtn.addEventListener("click", () => {
   let result = buildCombinedMeshForExport(activeBase, model);
   if (!result && inverseModeInput.checked && currentInversePreviewMesh) {
     // Fallback: reuse the already computed inverse preview geometry.
+    dlog("export.combined.fallback.previewMesh", {
+      previewBox: boxInfo(currentInversePreviewMesh),
+    });
     result = currentInversePreviewMesh.clone();
   }
   if (!result) {
+    dlog("export.combined.failed", {});
     setStatus(`${t("statusError")}: inverse subtraction failed for this geometry`);
     return;
   }
+  dlog("export.combined.success", {
+    resultBox: boxInfo(result),
+  });
   const exporter = new STLExporter();
   const stl = exporter.parse(result, { binary: false });
   const blob = new Blob([stl], { type: "model/stl" });
