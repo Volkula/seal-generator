@@ -261,6 +261,37 @@
           </label>
           <p class="hint" id="baseStlHint">Stacked under the round disk when both are on; alone if only STL is loaded.</p>
 
+          <div id="stlAddonTransformWrap" class="stl-addon-transforms" hidden>
+            <label class="field">
+              <span id="stlAddonOffsetXLabel">Add-on STL offset X (mm)</span>
+              <div class="range-row">
+                <input id="stlAddonOffsetX" type="range" min="-200" max="200" step="0.1" value="0" />
+                <input id="stlAddonOffsetXValue" type="number" min="-200" max="200" step="0.1" value="0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="stlAddonOffsetYLabel">Add-on STL offset Y (mm)</span>
+              <div class="range-row">
+                <input id="stlAddonOffsetY" type="range" min="-200" max="200" step="0.1" value="0" />
+                <input id="stlAddonOffsetYValue" type="number" min="-200" max="200" step="0.1" value="0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="stlAddonOffsetZLabel">Add-on STL offset Z (mm)</span>
+              <div class="range-row">
+                <input id="stlAddonOffsetZ" type="range" min="-200" max="200" step="0.1" value="0" />
+                <input id="stlAddonOffsetZValue" type="number" min="-200" max="200" step="0.1" value="0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="stlAddonScaleLabel">Add-on STL scale</span>
+              <div class="range-row">
+                <input id="stlAddonScale" type="range" min="0.05" max="5" step="0.01" value="1" />
+                <input id="stlAddonScaleValue" type="number" min="0.05" max="5" step="0.01" value="1" />
+              </div>
+            </label>
+          </div>
+
           <label class="field">
             <span id="liftLabel">Lift over base (mm)</span>
             <div class="range-row">

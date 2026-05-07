@@ -62,6 +62,15 @@ const flatViewBtn = document.getElementById("flatViewBtn");
 const fitBaseToEmblemBtn = document.getElementById("fitBaseToEmblemBtn");
 const fitEmblemToBaseBtn = document.getElementById("fitEmblemToBaseBtn");
 const fitInsetPctInput = document.getElementById("fitInsetPct");
+const stlAddonOffsetXInput = document.getElementById("stlAddonOffsetX");
+const stlAddonOffsetXValueInput = document.getElementById("stlAddonOffsetXValue");
+const stlAddonOffsetYInput = document.getElementById("stlAddonOffsetY");
+const stlAddonOffsetYValueInput = document.getElementById("stlAddonOffsetYValue");
+const stlAddonOffsetZInput = document.getElementById("stlAddonOffsetZ");
+const stlAddonOffsetZValueInput = document.getElementById("stlAddonOffsetZValue");
+const stlAddonScaleInput = document.getElementById("stlAddonScale");
+const stlAddonScaleValueInput = document.getElementById("stlAddonScaleValue");
+const stlAddonTransformWrap = document.getElementById("stlAddonTransformWrap");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
@@ -132,6 +141,9 @@ const DEBUG = true;
 /** Matches emblem/base offset sliders and number clamps (±mm). */
 const OFFSET_MM_LIMIT = 400;
 
+/** Matches add-on STL offset sliders (±mm). */
+const STL_ADDON_OFFSET_MM = 200;
+
 /** Position after aligning emblem to base, before emblem offset sliders (scene space). */
 const lastEmblemCanonicalPosition = new THREE.Vector3();
 /** Persisted emblem rotation/scale from gizmo across rebuild(buildMesh resets mesh). */
@@ -164,6 +176,10 @@ const i18n = {
     baseStlHint:
       "Stacked below the disk when both are enabled. If disk is off, only the STL defines the base.",
     generateBase: "Generate round disk base",
+    stlAddonOffsetX: "Add-on STL offset X (mm)",
+    stlAddonOffsetY: "Add-on STL offset Y (mm)",
+    stlAddonOffsetZ: "Add-on STL offset Z (mm)",
+    stlAddonScale: "Add-on STL scale",
     baseDiameter: "Base diameter (mm)",
     baseThickness: "Base thickness (mm)",
     size: "Size (max dimension, mm)",
@@ -257,6 +273,10 @@ const i18n = {
     baseStlHint:
       "Под диском, если включены оба; если диск выключен — только STL как база.",
     generateBase: "Круглый диск (основа)",
+    stlAddonOffsetX: "Смещение STL доп. X (мм)",
+    stlAddonOffsetY: "Смещение STL доп. Y (мм)",
+    stlAddonOffsetZ: "Смещение STL доп. Z (мм)",
+    stlAddonScale: "Масштаб STL доп.",
     baseDiameter: "Диаметр основания (мм)",
     baseThickness: "Толщина основания (мм)",
     size: "Размер (макс. габарит, мм)",
@@ -746,6 +766,10 @@ function applyLocale() {
   document.getElementById("batchSvgLabel").textContent = t("batchSvg");
   document.getElementById("baseStlLabel").textContent = t("baseStl");
   document.getElementById("baseStlHint").textContent = t("baseStlHint");
+  document.getElementById("stlAddonOffsetXLabel").textContent = t("stlAddonOffsetX");
+  document.getElementById("stlAddonOffsetYLabel").textContent = t("stlAddonOffsetY");
+  document.getElementById("stlAddonOffsetZLabel").textContent = t("stlAddonOffsetZ");
+  document.getElementById("stlAddonScaleLabel").textContent = t("stlAddonScale");
   document.getElementById("generateBaseLabel").textContent = t("generateBase");
   document.getElementById("baseDiameterLabel").textContent = t("baseDiameter");
   document.getElementById("baseThicknessLabel").textContent = t("baseThickness");
@@ -951,11 +975,20 @@ function buildComposableBaseRoot(options = {}) {
   }
   if (hasStl) {
     stl = uploadedBaseMesh.clone();
+    const s = clampNumber(Number(stlAddonScaleInput.value ?? 1), 0.05, 5);
+    stl.scale.set(s, s, s);
+    stl.updateMatrixWorld(true);
     if (hasCyl) {
       const cyBox = new THREE.Box3().setFromObject(cyl);
       const stBox = new THREE.Box3().setFromObject(stl);
       stl.position.z = cyBox.min.z - stBox.max.z;
     }
+    const ox = clampNumber(Number(stlAddonOffsetXInput.value ?? 0), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
+    const oy = clampNumber(Number(stlAddonOffsetYInput.value ?? 0), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
+    const oz = clampNumber(Number(stlAddonOffsetZInput.value ?? 0), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
+    stl.position.x += ox;
+    stl.position.y += oy;
+    stl.position.z += oz;
     group.add(stl);
   }
   if (omitBaseOffset) {
@@ -1322,6 +1355,10 @@ function captureState() {
     emblemOffsetX: emblemOffsetXInput.value,
     emblemOffsetY: emblemOffsetYInput.value,
     emblemOffsetZ: emblemOffsetZInput.value,
+    stlAddonOffsetX: stlAddonOffsetXInput.value,
+    stlAddonOffsetY: stlAddonOffsetYInput.value,
+    stlAddonOffsetZ: stlAddonOffsetZInput.value,
+    stlAddonScale: stlAddonScaleInput.value,
     generateBase: generateBaseInput.checked,
     baseDiameter: baseDiameterInput.value,
     baseThickness: baseThicknessInput.value,
@@ -1366,6 +1403,10 @@ function applyState(state) {
   emblemOffsetXInput.value = state.emblemOffsetX ?? emblemOffsetXInput.value;
   emblemOffsetYInput.value = state.emblemOffsetY ?? emblemOffsetYInput.value;
   emblemOffsetZInput.value = state.emblemOffsetZ ?? emblemOffsetZInput.value;
+  stlAddonOffsetXInput.value = state.stlAddonOffsetX ?? stlAddonOffsetXInput.value ?? "0";
+  stlAddonOffsetYInput.value = state.stlAddonOffsetY ?? stlAddonOffsetYInput.value ?? "0";
+  stlAddonOffsetZInput.value = state.stlAddonOffsetZ ?? stlAddonOffsetZInput.value ?? "0";
+  stlAddonScaleInput.value = state.stlAddonScale ?? stlAddonScaleInput.value ?? "1";
   generateBaseInput.checked = !!state.generateBase;
   baseDiameterInput.value = state.baseDiameter ?? baseDiameterInput.value;
   baseThicknessInput.value = state.baseThickness ?? baseThicknessInput.value;
@@ -1430,6 +1471,10 @@ function resetSettingsToDefaults() {
   emblemOffsetXInput.value = "0";
   emblemOffsetYInput.value = "0";
   emblemOffsetZInput.value = "0";
+  stlAddonOffsetXInput.value = "0";
+  stlAddonOffsetYInput.value = "0";
+  stlAddonOffsetZInput.value = "0";
+  stlAddonScaleInput.value = "1";
   rebuild();
 }
 
@@ -1609,6 +1654,11 @@ function refreshOutputs() {
   emblemOffsetXValueInput.value = `${Number(emblemOffsetXInput.value).toFixed(1)}`;
   emblemOffsetYValueInput.value = `${Number(emblemOffsetYInput.value).toFixed(1)}`;
   emblemOffsetZValueInput.value = `${Number(emblemOffsetZInput.value).toFixed(1)}`;
+  stlAddonOffsetXValueInput.value = `${Number(stlAddonOffsetXInput.value).toFixed(1)}`;
+  stlAddonOffsetYValueInput.value = `${Number(stlAddonOffsetYInput.value).toFixed(1)}`;
+  stlAddonOffsetZValueInput.value = `${Number(stlAddonOffsetZInput.value).toFixed(1)}`;
+  stlAddonScaleValueInput.value = `${Number(stlAddonScaleInput.value).toFixed(2)}`;
+  if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseMesh;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
 
@@ -1741,7 +1791,7 @@ for (const input of [sizeInput, thicknessInput, scaleXInput, scaleYInput, scaleZ
   });
 }
 
-for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput]) {
+for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, stlAddonOffsetXInput, stlAddonOffsetYInput, stlAddonOffsetZInput, stlAddonScaleInput]) {
   input.addEventListener("input", rebuild);
   input.addEventListener("change", () => {
     rebuild();
@@ -1853,6 +1903,34 @@ emblemOffsetZValueInput.addEventListener("input", () => {
   rebuild();
 });
 emblemOffsetZValueInput.addEventListener("change", commitHistory);
+
+stlAddonOffsetXValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(stlAddonOffsetXValueInput.value || stlAddonOffsetXInput.value), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
+  stlAddonOffsetXInput.value = `${value}`;
+  rebuild();
+});
+stlAddonOffsetXValueInput.addEventListener("change", commitHistory);
+
+stlAddonOffsetYValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(stlAddonOffsetYValueInput.value || stlAddonOffsetYInput.value), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
+  stlAddonOffsetYInput.value = `${value}`;
+  rebuild();
+});
+stlAddonOffsetYValueInput.addEventListener("change", commitHistory);
+
+stlAddonOffsetZValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(stlAddonOffsetZValueInput.value || stlAddonOffsetZInput.value), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
+  stlAddonOffsetZInput.value = `${value}`;
+  rebuild();
+});
+stlAddonOffsetZValueInput.addEventListener("change", commitHistory);
+
+stlAddonScaleValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(stlAddonScaleValueInput.value || stlAddonScaleInput.value), 0.05, 5);
+  stlAddonScaleInput.value = `${value}`;
+  rebuild();
+});
+stlAddonScaleValueInput.addEventListener("change", commitHistory);
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
 sidebarSideSelect.addEventListener("change", () => {
