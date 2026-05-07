@@ -90,6 +90,11 @@
           <input id="flipX" type="checkbox" checked />
           <span id="flipXLabel">Flip horizontally (left-right)</span>
         </label>
+
+        <label class="field checkbox">
+          <input id="inverseMode" type="checkbox" />
+          <span id="inverseModeLabel">Inverse (negative stamp)</span>
+        </label>
       </section>
 
       <section class="tab-panel" data-panel="base">
@@ -124,6 +129,46 @@
           <div class="range-row">
             <input id="lift" type="range" min="0" max="5" step="0.1" value="0.2" />
             <input id="liftValue" type="number" min="0" max="5" step="0.1" value="0.2" />
+          </div>
+        </label>
+
+        <label class="field">
+          <span id="insetLabel">Inset depth (inverse, mm)</span>
+          <div class="range-row">
+            <input id="inset" type="range" min="0" max="10" step="0.1" value="1.0" />
+            <input id="insetValue" type="number" min="0" max="10" step="0.1" value="1.0" />
+          </div>
+        </label>
+
+        <label class="field">
+          <span id="baseOffsetXLabel">Base offset X (mm)</span>
+          <div class="range-row">
+            <input id="baseOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
+            <input id="baseOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
+          </div>
+        </label>
+
+        <label class="field">
+          <span id="baseOffsetZLabel">Base offset Z (mm)</span>
+          <div class="range-row">
+            <input id="baseOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
+            <input id="baseOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
+          </div>
+        </label>
+
+        <label class="field">
+          <span id="emblemOffsetXLabel">Emblem offset X (mm)</span>
+          <div class="range-row">
+            <input id="emblemOffsetX" type="range" min="-100" max="100" step="0.1" value="0" />
+            <input id="emblemOffsetXValue" type="number" min="-100" max="100" step="0.1" value="0" />
+          </div>
+        </label>
+
+        <label class="field">
+          <span id="emblemOffsetZLabel">Emblem offset Z (mm)</span>
+          <div class="range-row">
+            <input id="emblemOffsetZ" type="range" min="-100" max="100" step="0.1" value="0" />
+            <input id="emblemOffsetZValue" type="number" min="-100" max="100" step="0.1" value="0" />
           </div>
         </label>
 

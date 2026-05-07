@@ -22,10 +22,21 @@ const thicknessInput = document.getElementById("thickness");
 const thicknessValueInput = document.getElementById("thicknessValue");
 const liftInput = document.getElementById("lift");
 const liftValueInput = document.getElementById("liftValue");
+const insetInput = document.getElementById("inset");
+const insetValueInput = document.getElementById("insetValue");
 const densityInput = document.getElementById("density");
 const autoFixInput = document.getElementById("autoFix");
 const flipYInput = document.getElementById("flipY");
 const flipXInput = document.getElementById("flipX");
+const inverseModeInput = document.getElementById("inverseMode");
+const baseOffsetXInput = document.getElementById("baseOffsetX");
+const baseOffsetXValueInput = document.getElementById("baseOffsetXValue");
+const baseOffsetZInput = document.getElementById("baseOffsetZ");
+const baseOffsetZValueInput = document.getElementById("baseOffsetZValue");
+const emblemOffsetXInput = document.getElementById("emblemOffsetX");
+const emblemOffsetXValueInput = document.getElementById("emblemOffsetXValue");
+const emblemOffsetZInput = document.getElementById("emblemOffsetZ");
+const emblemOffsetZValueInput = document.getElementById("emblemOffsetZValue");
 const exportBtn = document.getElementById("exportBtn");
 const exportCombinedBtn = document.getElementById("exportCombinedBtn");
 const exportZipBtn = document.getElementById("exportZipBtn");
@@ -66,6 +77,12 @@ const i18n = {
     size: "Size (max dimension, mm)",
     thickness: "Thickness (mm)",
     lift: "Lift over base (mm)",
+    inset: "Inset depth (inverse, mm)",
+    inverseMode: "Inverse (negative stamp)",
+    baseOffsetX: "Base offset X (mm)",
+    baseOffsetZ: "Base offset Z (mm)",
+    emblemOffsetX: "Emblem offset X (mm)",
+    emblemOffsetZ: "Emblem offset Z (mm)",
     density: "Line density",
     autoFix: "Auto-fix unclosed faces",
     flipY: "Flip vertically (top-bottom)",
@@ -110,6 +127,12 @@ const i18n = {
     size: "Размер (макс. габарит, мм)",
     thickness: "Толщина (мм)",
     lift: "Подъем над основанием (мм)",
+    inset: "Глубина утапливания (inverse, мм)",
+    inverseMode: "Inverse (негатив для оттиска)",
+    baseOffsetX: "Смещение основания X (мм)",
+    baseOffsetZ: "Смещение основания Z (мм)",
+    emblemOffsetX: "Смещение эмблемы X (мм)",
+    emblemOffsetZ: "Смещение эмблемы Z (мм)",
     density: "Плотность линий",
     autoFix: "Автоисправление незамкнутых контуров",
     flipY: "Отразить по вертикали (верх-низ)",
@@ -196,10 +219,16 @@ function applyLocale() {
   document.getElementById("sizeLabel").textContent = t("size");
   document.getElementById("thicknessLabel").textContent = t("thickness");
   document.getElementById("liftLabel").textContent = t("lift");
+  document.getElementById("insetLabel").textContent = t("inset");
+  document.getElementById("baseOffsetXLabel").textContent = t("baseOffsetX");
+  document.getElementById("baseOffsetZLabel").textContent = t("baseOffsetZ");
+  document.getElementById("emblemOffsetXLabel").textContent = t("emblemOffsetX");
+  document.getElementById("emblemOffsetZLabel").textContent = t("emblemOffsetZ");
   document.getElementById("densityLabel").textContent = t("density");
   document.getElementById("autoFixLabel").textContent = t("autoFix");
   document.getElementById("flipYLabel").textContent = t("flipY");
   document.getElementById("flipXLabel").textContent = t("flipX");
+  document.getElementById("inverseModeLabel").textContent = t("inverseMode");
   document.getElementById("exportBtn").textContent = t("export");
   document.getElementById("exportCombinedBtn").textContent = t("exportCombined");
   document.getElementById("exportZipBtn").textContent = t("exportZip");
@@ -299,15 +328,30 @@ function composePreview() {
   const base = getActiveBaseMesh();
   if (base) {
     currentBaseMesh = base;
+    currentBaseMesh.position.set(Number(baseOffsetXInput.value), 0, Number(baseOffsetZInput.value));
     const baseBox = new THREE.Box3().setFromObject(base);
     const modelBox = new THREE.Box3().setFromObject(currentMesh);
     const lift = Number(liftInput.value);
+    const inset = Number(insetInput.value);
+    const inverse = inverseModeInput.checked;
     currentMesh.position.set(0, 0, 0);
-    currentMesh.position.y += baseBox.max.y + lift - modelBox.min.y;
+    if (inverse) {
+      currentMesh.scale.y = -Math.abs(currentMesh.scale.y || 1);
+      const invBox = new THREE.Box3().setFromObject(currentMesh);
+      currentMesh.position.y += baseBox.max.y - inset - invBox.max.y;
+    } else {
+      currentMesh.scale.y = Math.abs(currentMesh.scale.y || 1);
+      const normalBox = new THREE.Box3().setFromObject(currentMesh);
+      currentMesh.position.y += baseBox.max.y + lift - normalBox.min.y;
+    }
+    currentMesh.position.x += Number(emblemOffsetXInput.value);
+    currentMesh.position.z += Number(emblemOffsetZInput.value);
     scene.add(base);
     exportCombinedBtn.disabled = false;
   } else {
     currentMesh.position.set(0, 0, 0);
+    currentMesh.position.x += Number(emblemOffsetXInput.value);
+    currentMesh.position.z += Number(emblemOffsetZInput.value);
     exportCombinedBtn.disabled = true;
   }
   scene.add(currentMesh);
@@ -320,10 +364,16 @@ function captureState() {
     size: sizeInput.value,
     thickness: thicknessInput.value,
     lift: liftInput.value,
+    inset: insetInput.value,
     density: densityInput.value,
     autoFix: autoFixInput.checked,
     flipX: flipXInput.checked,
     flipY: flipYInput.checked,
+    inverseMode: inverseModeInput.checked,
+    baseOffsetX: baseOffsetXInput.value,
+    baseOffsetZ: baseOffsetZInput.value,
+    emblemOffsetX: emblemOffsetXInput.value,
+    emblemOffsetZ: emblemOffsetZInput.value,
     generateBase: generateBaseInput.checked,
     baseDiameter: baseDiameterInput.value,
     baseThickness: baseThicknessInput.value,
@@ -341,10 +391,16 @@ function applyState(state) {
   sizeInput.value = state.size ?? sizeInput.value;
   thicknessInput.value = state.thickness ?? thicknessInput.value;
   liftInput.value = state.lift ?? liftInput.value;
+  insetInput.value = state.inset ?? insetInput.value;
   densityInput.value = state.density ?? densityInput.value;
   autoFixInput.checked = !!state.autoFix;
   flipXInput.checked = !!state.flipX;
   flipYInput.checked = !!state.flipY;
+  inverseModeInput.checked = !!state.inverseMode;
+  baseOffsetXInput.value = state.baseOffsetX ?? baseOffsetXInput.value;
+  baseOffsetZInput.value = state.baseOffsetZ ?? baseOffsetZInput.value;
+  emblemOffsetXInput.value = state.emblemOffsetX ?? emblemOffsetXInput.value;
+  emblemOffsetZInput.value = state.emblemOffsetZ ?? emblemOffsetZInput.value;
   generateBaseInput.checked = !!state.generateBase;
   baseDiameterInput.value = state.baseDiameter ?? baseDiameterInput.value;
   baseThicknessInput.value = state.baseThickness ?? baseThicknessInput.value;
@@ -504,8 +560,13 @@ function refreshOutputs() {
   sizeValueInput.value = `${Number(sizeInput.value).toFixed(0)}`;
   thicknessValueInput.value = `${Number(thicknessInput.value).toFixed(1)}`;
   liftValueInput.value = `${Number(liftInput.value).toFixed(1)}`;
+  insetValueInput.value = `${Number(insetInput.value).toFixed(1)}`;
   baseDiameterValueInput.value = `${Number(baseDiameterInput.value).toFixed(0)}`;
   baseThicknessValueInput.value = `${Number(baseThicknessInput.value).toFixed(1)}`;
+  baseOffsetXValueInput.value = `${Number(baseOffsetXInput.value).toFixed(1)}`;
+  baseOffsetZValueInput.value = `${Number(baseOffsetZInput.value).toFixed(1)}`;
+  emblemOffsetXValueInput.value = `${Number(emblemOffsetXInput.value).toFixed(1)}`;
+  emblemOffsetZValueInput.value = `${Number(emblemOffsetZInput.value).toFixed(1)}`;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
 
@@ -613,7 +674,7 @@ baseStlFileInput.addEventListener("change", async (e) => {
   commitHistory();
 });
 
-for (const input of [sizeInput, thicknessInput, liftInput, densityInput, autoFixInput, flipYInput, flipXInput]) {
+for (const input of [sizeInput, thicknessInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetZInput]) {
   input.addEventListener("input", rebuild);
   input.addEventListener("change", () => {
     rebuild();
@@ -650,6 +711,13 @@ liftValueInput.addEventListener("input", () => {
 });
 liftValueInput.addEventListener("change", commitHistory);
 
+insetValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(insetValueInput.value || insetInput.value), 0, 10);
+  insetInput.value = `${value}`;
+  rebuild();
+});
+insetValueInput.addEventListener("change", commitHistory);
+
 baseDiameterValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(baseDiameterValueInput.value || baseDiameterInput.value), 10, 200);
   baseDiameterInput.value = `${value}`;
@@ -663,6 +731,34 @@ baseThicknessValueInput.addEventListener("input", () => {
   rebuild();
 });
 baseThicknessValueInput.addEventListener("change", commitHistory);
+
+baseOffsetXValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(baseOffsetXValueInput.value || baseOffsetXInput.value), -100, 100);
+  baseOffsetXInput.value = `${value}`;
+  rebuild();
+});
+baseOffsetXValueInput.addEventListener("change", commitHistory);
+
+baseOffsetZValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(baseOffsetZValueInput.value || baseOffsetZInput.value), -100, 100);
+  baseOffsetZInput.value = `${value}`;
+  rebuild();
+});
+baseOffsetZValueInput.addEventListener("change", commitHistory);
+
+emblemOffsetXValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(emblemOffsetXValueInput.value || emblemOffsetXInput.value), -100, 100);
+  emblemOffsetXInput.value = `${value}`;
+  rebuild();
+});
+emblemOffsetXValueInput.addEventListener("change", commitHistory);
+
+emblemOffsetZValueInput.addEventListener("input", () => {
+  const value = clampNumber(Number(emblemOffsetZValueInput.value || emblemOffsetZInput.value), -100, 100);
+  emblemOffsetZInput.value = `${value}`;
+  rebuild();
+});
+emblemOffsetZValueInput.addEventListener("change", commitHistory);
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
 langSelect.addEventListener("change", () => {
@@ -695,8 +791,21 @@ exportCombinedBtn.addEventListener("click", () => {
   if (!activeBase) return;
   const baseBox = new THREE.Box3().setFromObject(activeBase);
   const model = currentMesh.clone();
-  const modelBox = new THREE.Box3().setFromObject(model);
-  model.position.y += baseBox.max.y + Number(liftInput.value) - modelBox.min.y;
+  const inverse = inverseModeInput.checked;
+  const lift = Number(liftInput.value);
+  const inset = Number(insetInput.value);
+  if (inverse) {
+    model.scale.y = -Math.abs(model.scale.y || 1);
+    const invBox = new THREE.Box3().setFromObject(model);
+    model.position.y += baseBox.max.y - inset - invBox.max.y;
+  } else {
+    model.scale.y = Math.abs(model.scale.y || 1);
+    const modelBox = new THREE.Box3().setFromObject(model);
+    model.position.y += baseBox.max.y + lift - modelBox.min.y;
+  }
+  activeBase.position.set(Number(baseOffsetXInput.value), 0, Number(baseOffsetZInput.value));
+  model.position.x += Number(emblemOffsetXInput.value);
+  model.position.z += Number(emblemOffsetZInput.value);
   const exporter = new STLExporter();
   const combined = new THREE.Group();
   combined.add(activeBase);
