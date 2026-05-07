@@ -568,12 +568,25 @@ function composePreview() {
     currentBaseMesh.material.dispose();
     currentBaseMesh = null;
   }
+  const base = getActiveBaseMesh();
   if (!currentMesh) {
+    if (base) {
+      currentBaseMesh = base;
+      currentBaseMesh.position.set(
+        Number(baseOffsetXInput.value),
+        Number(baseOffsetYInput.value),
+        Number(baseOffsetZInput.value)
+      );
+      currentBaseMesh.material.transparent = false;
+      currentBaseMesh.material.opacity = 0.95;
+      setWireframe(currentBaseMesh);
+      scene.add(currentBaseMesh);
+    }
     exportCombinedBtn.disabled = true;
+    updateGizmoTarget();
     return;
   }
 
-  const base = getActiveBaseMesh();
   if (base) {
     currentBaseMesh = base;
     currentBaseMesh.position.set(
@@ -919,6 +932,18 @@ function clampNumber(value, min, max) {
 function rebuild() {
   refreshOutputs();
   if (!svgText) {
+    if (currentMesh) {
+      scene.remove(currentMesh);
+      currentMesh.geometry.dispose();
+      currentMesh.material.dispose();
+      currentMesh = null;
+    }
+    composePreview();
+    exportBtn.disabled = true;
+    exportZipBtn.disabled = uploadedFiles.length === 0;
+    setStatus(
+      `${t("statusBase")}: ${generateBaseInput.checked || uploadedBaseMesh ? t("on") : t("off")}\n${t("statusIdle")}`
+    );
     return;
   }
 
