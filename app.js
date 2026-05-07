@@ -390,7 +390,14 @@ transformControls.showY = true;
 transformControls.size = 0.75;
 transformControls.addEventListener("dragging-changed", (event) => {
   controls.enabled = !event.value;
-  if (!event.value && inverseModeInput.checked && transformControls.object === currentMesh && currentMesh && currentBaseMesh) {
+  const o = transformControls.object;
+  if (
+    !event.value &&
+    inverseModeInput.checked &&
+    currentMesh &&
+    currentBaseMesh &&
+    (o === currentMesh || o === currentBaseMesh)
+  ) {
     if (inverseCombinedRafId) {
       cancelAnimationFrame(inverseCombinedRafId);
       inverseCombinedRafId = 0;
@@ -401,7 +408,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
 transformControls.addEventListener("objectChange", () => {
   const obj = transformControls.object;
   if (!obj) return;
-  if (obj === currentBaseMesh || obj === currentInversePreviewMesh) {
+  if (obj === currentBaseMesh) {
     baseOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
     baseOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
     baseOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
@@ -418,7 +425,7 @@ transformControls.addEventListener("objectChange", () => {
     }
   }
   refreshOutputs();
-  if (inverseModeInput.checked && obj === currentMesh && currentMesh && currentBaseMesh) {
+  if (inverseModeInput.checked && currentMesh && currentBaseMesh && (obj === currentMesh || obj === currentBaseMesh)) {
     scheduleRebuildInverseCombinedMesh();
   }
 });
@@ -1043,6 +1050,40 @@ function applyBaseOpaqueVisual(root) {
   });
 }
 
+/** In inverse mode: faint visible disk + STL for spatial reference (CSG carve draws above). */
+function applyInverseModeBaseReferenceVisual(root) {
+  if (!root) return;
+  root.visible = true;
+  root.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const m of mats) {
+      m.transparent = true;
+      m.opacity = 0.16;
+      m.depthWrite = false;
+      m.needsUpdate = true;
+      child.renderOrder = 0;
+    }
+  });
+}
+
+/** In inverse mode: faint visible disk + STL for spatial reference (CSG result draws on top). */
+function applyInverseModeBaseReferenceVisual(root) {
+  if (!root) return;
+  root.visible = true;
+  root.traverse((child) => {
+    if (!child.isMesh || !child.material) return;
+    const mats = Array.isArray(child.material) ? child.material : [child.material];
+    for (const m of mats) {
+      m.transparent = true;
+      m.opacity = 0.16;
+      m.depthWrite = false;
+      child.renderOrder = 0;
+      m.needsUpdate = true;
+    }
+  });
+}
+
 function setWireframe(mesh) {
   if (!mesh?.traverse) return;
   mesh.traverse((child) => {
@@ -1060,7 +1101,8 @@ function updateGizmoTarget() {
   selectedObjectType = gizmoTargetInput.value === "base" ? "base" : "emblem";
   updateSelectedObjectUI();
   const isBaseTarget = gizmoTargetInput.value === "base";
-  const baseTarget = currentInversePreviewMesh || currentBaseMesh;
+  /** Always manipulate the composed base group; inverse CSG preview is display-only for export/visual. */
+  const baseTarget = currentBaseMesh;
   const target = isBaseTarget ? baseTarget : currentMesh;
   // In inverse mode, hide cutter mesh while editing base to avoid ghost-like overlay.
   if (inverseModeInput.checked && currentMesh) {
@@ -1282,6 +1324,7 @@ function rebuildInverseCombinedMesh(options = {}) {
     return;
   }
   setWireframe(previewCombined);
+  previewCombined.renderOrder = 10;
   scene.add(previewCombined);
   currentInversePreviewMesh = previewCombined;
   if (!skipGizmoUpdate) updateGizmoTarget();
@@ -1329,7 +1372,7 @@ function composePreview() {
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
       scene.add(currentBaseMesh);
-      currentBaseMesh.visible = false;
+      applyInverseModeBaseReferenceVisual(currentBaseMesh);
       rebuildInverseCombinedMesh({ skipGizmoUpdate: true });
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
@@ -1337,7 +1380,7 @@ function composePreview() {
       currentMesh.material.emissive = new THREE.Color(0x5a1f00);
       currentMesh.material.emissiveIntensity = 0.55;
       currentMesh.visible = false;
-      // Base stays in the scene graph (invisible) so TransformControls can attach when inverse preview fails.
+
     } else {
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
