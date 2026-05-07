@@ -271,7 +271,7 @@ transformControls.addEventListener("objectChange", () => {
   refreshOutputs();
 });
 transformControls.addEventListener("mouseUp", () => {
-  rebuild();
+  // Don't rebuild here: rebuild recreates meshes and resets gizmo scale/rotation.
   commitHistory();
 });
 scene.add(transformControls);
@@ -487,7 +487,6 @@ function placeEmblem(baseMesh, emblemMesh) {
   const inset = Number(insetInput.value);
   const inverse = inverseModeInput.checked;
   emblemMesh.position.set(0, 0, 0);
-  emblemMesh.scale.set(1, 1, 1);
   const baseBox = baseMesh ? new THREE.Box3().setFromObject(baseMesh) : null;
   const emblemBox = new THREE.Box3().setFromObject(emblemMesh);
   if (baseBox) {
