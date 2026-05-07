@@ -137,6 +137,7 @@ const lastEmblemCanonicalPosition = new THREE.Vector3();
 /** Persisted emblem rotation/scale from gizmo across rebuild(buildMesh resets mesh). */
 const emblemGizmoEuler = new THREE.Euler(0, 0, 0, "XYZ");
 const emblemGizmoScale = new THREE.Vector3(1, 1, 1);
+let inverseCombinedRafId = 0;
 
 const i18n = {
   en: {
@@ -360,6 +361,13 @@ transformControls.showY = true;
 transformControls.size = 0.75;
 transformControls.addEventListener("dragging-changed", (event) => {
   controls.enabled = !event.value;
+  if (!event.value && inverseModeInput.checked && transformControls.object === currentMesh && currentMesh && currentBaseMesh) {
+    if (inverseCombinedRafId) {
+      cancelAnimationFrame(inverseCombinedRafId);
+      inverseCombinedRafId = 0;
+    }
+    rebuildInverseCombinedMesh();
+  }
 });
 transformControls.addEventListener("objectChange", () => {
   const obj = transformControls.object;
@@ -381,6 +389,9 @@ transformControls.addEventListener("objectChange", () => {
     }
   }
   refreshOutputs();
+  if (inverseModeInput.checked && obj === currentMesh && currentMesh && currentBaseMesh) {
+    scheduleRebuildInverseCombinedMesh();
+  }
 });
 transformControls.addEventListener("mouseUp", () => {
   // Don't rebuild here: rebuild recreates meshes and resets gizmo scale/rotation.
@@ -1070,6 +1081,38 @@ function getBaseFitTargetSize() {
   return getEmblemTargetSizeForCurrentBase();
 }
 
+function disposeCurrentInversePreviewMesh() {
+  if (!currentInversePreviewMesh) return;
+  scene.remove(currentInversePreviewMesh);
+  currentInversePreviewMesh.geometry?.dispose?.();
+  currentInversePreviewMesh.material?.dispose?.();
+  currentInversePreviewMesh = null;
+}
+
+/**
+ * Recompute inverse-mode CSG preview from live emblem/base meshes (called after gizmo moves emblem).
+ */
+function rebuildInverseCombinedMesh(options = {}) {
+  const skipGizmoUpdate = !!options.skipGizmoUpdate;
+  if (!inverseModeInput.checked || !currentMesh || !currentBaseMesh) return;
+  disposeCurrentInversePreviewMesh();
+  const previewCombined = buildCombinedMeshForExport(currentBaseMesh.clone(), currentMesh.clone());
+  if (!previewCombined) return;
+  setWireframe(previewCombined);
+  scene.add(previewCombined);
+  currentInversePreviewMesh = previewCombined;
+  if (!skipGizmoUpdate) updateGizmoTarget();
+}
+
+function scheduleRebuildInverseCombinedMesh() {
+  if (!inverseModeInput.checked || !currentMesh || !currentBaseMesh) return;
+  if (inverseCombinedRafId) return;
+  inverseCombinedRafId = requestAnimationFrame(() => {
+    inverseCombinedRafId = 0;
+    rebuildInverseCombinedMesh();
+  });
+}
+
 function composePreview() {
   if (currentMesh) scene.remove(currentMesh);
   if (currentInversePreviewMesh) {
@@ -1113,12 +1156,7 @@ function composePreview() {
     placeEmblem(currentBaseMesh, currentMesh);
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
-      const previewCombined = buildCombinedMeshForExport(currentBaseMesh.clone(), currentMesh.clone());
-      if (previewCombined) {
-        setWireframe(previewCombined);
-        scene.add(previewCombined);
-        currentInversePreviewMesh = previewCombined;
-      }
+      rebuildInverseCombinedMesh({ skipGizmoUpdate: true });
       currentMesh.material.transparent = false;
       currentMesh.material.opacity = 1.0;
       currentMesh.material.color.setHex(0xff7a59);
