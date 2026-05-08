@@ -11,6 +11,7 @@ import { Evaluator, Brush, SUBTRACTION } from "three-bvh-csg";
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
 const baseStlFileInput = document.getElementById("baseStlFile");
+const baseStlClearBtn = document.getElementById("baseStlClearBtn");
 const generateBaseInput = document.getElementById("generateBase");
 const baseDiameterInput = document.getElementById("baseDiameter");
 const baseDiameterValueInput = document.getElementById("baseDiameterValue");
@@ -182,6 +183,7 @@ const i18n = {
     batchClearSelection: "Clear selected",
     svgFile: "SVG file",
     baseStl: "Extra STL (under disk)",
+    baseStlClear: "Remove STL",
     baseStlHint:
       "Stacked below the disk when both are enabled. If disk is off, only the STL defines the base.",
     generateBase: "Generate round disk base",
@@ -279,6 +281,7 @@ const i18n = {
     batchClearSelection: "Очистить выбранные",
     svgFile: "SVG файл",
     baseStl: "Доп. STL (под диск)",
+    baseStlClear: "Убрать STL",
     baseStlHint:
       "Под диском, если включены оба; если диск выключен — только STL как база.",
     generateBase: "Круглый диск (основа)",
@@ -630,6 +633,7 @@ function renderBatchSelectionList() {
 
 function updateBatchButtonState() {
   batchExportBtn.disabled = batchFiles.length === 0;
+  exportZipBtn.disabled = uploadedFiles.length === 0 && batchFiles.length === 0;
   renderBatchSelectionList();
 }
 
@@ -791,6 +795,7 @@ function applyLocale() {
   document.getElementById("batchSvgLabel").textContent = t("batchSvg");
   document.getElementById("baseStlLabel").textContent = t("baseStl");
   document.getElementById("baseStlHint").textContent = t("baseStlHint");
+  if (baseStlClearBtn) baseStlClearBtn.textContent = t("baseStlClear");
   document.getElementById("stlAddonOffsetXLabel").textContent = t("stlAddonOffsetX");
   document.getElementById("stlAddonOffsetYLabel").textContent = t("stlAddonOffsetY");
   document.getElementById("stlAddonOffsetZLabel").textContent = t("stlAddonOffsetZ");
@@ -1178,15 +1183,6 @@ function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride 
   emblemMesh.position.x += Number(emblemOffsetXInput.value);
   emblemMesh.position.y += Number(emblemOffsetYInput.value);
   emblemMesh.position.z += Number(emblemOffsetZInput.value);
-
-  // Inverse safety: cutter top must be ≥ base top so the cut always breaks the surface
-  // (otherwise CSG produces a sealed cavity inside the disk that's invisible from outside).
-  if (inverse && baseBox) {
-    const finalEmBox = new THREE.Box3().setFromObject(emblemMesh);
-    if (finalEmBox.max.z < baseBox.max.z) {
-      emblemMesh.position.z += baseBox.max.z - finalEmBox.max.z;
-    }
-  }
 }
 
 function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null, silentLogs = false) {
@@ -1902,7 +1898,7 @@ function rebuild() {
     }
     composePreview();
     exportBtn.disabled = true;
-    exportZipBtn.disabled = uploadedFiles.length === 0;
+    exportZipBtn.disabled = uploadedFiles.length === 0 && batchFiles.length === 0;
     setStatus(
       `${t("statusBase")}: ${generateBaseInput.checked || uploadedBaseMesh ? t("on") : t("off")}\n${t("statusIdle")}`
     );
@@ -1936,7 +1932,7 @@ function rebuild() {
 
     composePreview();
     exportBtn.disabled = false;
-    exportZipBtn.disabled = uploadedFiles.length === 0;
+    exportZipBtn.disabled = uploadedFiles.length === 0 && batchFiles.length === 0;
     setStatus(
       [
         `${t("statusFile")}: ${svgName}`,
@@ -1977,6 +1973,7 @@ baseStlFileInput.addEventListener("change", async (e) => {
       uploadedBaseMesh.material.dispose();
       uploadedBaseMesh = null;
     }
+    if (baseStlClearBtn) baseStlClearBtn.disabled = true;
     composePreview();
     rebuild();
     return;
@@ -2006,9 +2003,25 @@ baseStlFileInput.addEventListener("change", async (e) => {
       roughness: 0.75,
     })
   );
+  if (baseStlClearBtn) baseStlClearBtn.disabled = false;
   rebuild();
   commitHistory();
 });
+
+if (baseStlClearBtn) {
+  baseStlClearBtn.addEventListener("click", () => {
+    if (uploadedBaseMesh) {
+      uploadedBaseMesh.geometry?.dispose?.();
+      uploadedBaseMesh.material?.dispose?.();
+      uploadedBaseMesh = null;
+    }
+    if (baseStlFileInput) baseStlFileInput.value = "";
+    baseStlClearBtn.disabled = true;
+    composePreview();
+    rebuild();
+    commitHistory();
+  });
+}
 
 for (const input of [sizeInput, thicknessInput, scaleXInput, scaleYInput, scaleZInput, liftInput, insetInput, densityInput, autoFixInput, flipYInput, flipXInput, inverseModeInput, baseOffsetXInput, baseOffsetYInput, baseOffsetZInput, emblemOffsetXInput, emblemOffsetYInput, emblemOffsetZInput, wireframeModeInput, gizmoEnabledInput]) {
   input.addEventListener("input", rebuild);
@@ -2276,7 +2289,7 @@ exportCombinedBtn.addEventListener("click", () => {
   }
 });
 
-exportZipBtn.addEventListener("click", async () => {
+async function runBatchExport() {
   if (!batchFiles.length) {
     return;
   }
@@ -2377,6 +2390,14 @@ exportZipBtn.addEventListener("click", async () => {
       ...(failures.length ? [`Failed: ${failures.length}`, ...failures.slice(0, 5)] : []),
     ].join("\n")
   );
+}
+
+exportZipBtn.addEventListener("click", () => {
+  runBatchExport().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error("[seal-generator] batch export crashed", err);
+    setStatus(`${t("statusError")}: ${err?.message || err}`);
+  });
 });
 
 batchSvgFilesInput.addEventListener("change", (e) => {
@@ -2385,7 +2406,13 @@ batchSvgFilesInput.addEventListener("change", (e) => {
   updateBatchButtonState();
 });
 
-batchExportBtn.addEventListener("click", () => exportZipBtn.click());
+batchExportBtn.addEventListener("click", () => {
+  runBatchExport().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error("[seal-generator] batch export crashed", err);
+    setStatus(`${t("statusError")}: ${err?.message || err}`);
+  });
+});
 
 libraryCategoryInput.addEventListener("change", updateLibraryItemLists);
 

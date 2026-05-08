@@ -257,7 +257,10 @@
 
           <label class="field">
             <span id="baseStlLabel">Extra base STL (add-on)</span>
-            <input id="baseStlFile" type="file" accept=".stl,model/stl" />
+            <div class="range-row">
+              <input id="baseStlFile" type="file" accept=".stl,model/stl" />
+              <button id="baseStlClearBtn" type="button" class="ghost" disabled>Remove STL</button>
+            </div>
           </label>
           <p class="hint" id="baseStlHint">Stacked under the round disk when both are on; alone if only STL is loaded.</p>
 
