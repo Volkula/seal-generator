@@ -1092,6 +1092,29 @@ function baseHasBothCylAndAddon(root) {
   return hasCyl && hasStl;
 }
 
+/**
+ * Inverse-mode emblem placement must ignore the STL addon — the cut belongs to the disk only.
+ * If the composite has both disk and addon, return the disk-only bounding box; otherwise the full base bbox.
+ */
+function getInverseTargetBaseBox(baseMesh) {
+  if (!baseMesh) return null;
+  if (!baseHasBothCylAndAddon(baseMesh)) return new THREE.Box3().setFromObject(baseMesh);
+  const box = new THREE.Box3();
+  let any = false;
+  baseMesh.traverse((child) => {
+    if (!child.isMesh) return;
+    if (!isCuttableBaseChild(child)) return;
+    const childBox = new THREE.Box3().setFromObject(child);
+    if (childBox.isEmpty()) return;
+    if (any) box.union(childBox);
+    else {
+      box.copy(childBox);
+      any = true;
+    }
+  });
+  return any ? box : new THREE.Box3().setFromObject(baseMesh);
+}
+
 /** Force material fully opaque so CSG result and base previews don't ghost out. */
 function forceMaterialOpaque(material) {
   if (!material) return;
@@ -1152,10 +1175,10 @@ function updateGizmoTarget() {
   /** Always manipulate the composed base group; inverse CSG preview is display-only for export/visual. */
   const baseTarget = currentBaseMesh;
   const target = isBaseTarget ? baseTarget : currentMesh;
-  // Inverse mode: show the emblem-cutter only while it's the gizmo target (drag preview); CSG preview shows the carved result.
-  if (inverseModeInput.checked && currentMesh) {
-    currentMesh.visible = !isBaseTarget;
-  } else if (currentMesh) {
+  // Inverse mode: keep the translucent emblem-cutter visible all the time so the user can see
+  // where the cut sits even when the gizmo target is the base. depthWrite is off on the cutter
+  // material, so it doesn't occlude the CSG result drawn behind it.
+  if (currentMesh) {
     currentMesh.visible = true;
   }
   if (target) {
@@ -1172,7 +1195,13 @@ function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride 
   const inset = insetOverride === null ? Number(insetInput.value) : Number(insetOverride);
   const inverse = inverseOverride === null ? inverseModeInput.checked : !!inverseOverride;
   emblemMesh.position.set(0, 0, 0);
-  const baseBox = baseMesh ? new THREE.Box3().setFromObject(baseMesh) : null;
+  // In inverse mode the cut has to stay anchored to the disk (cuttable part) regardless of where
+  // the user offsets the STL addon — otherwise moving the addon visually drags the cutter off the disk.
+  const baseBox = baseMesh
+    ? inverse
+      ? getInverseTargetBaseBox(baseMesh)
+      : new THREE.Box3().setFromObject(baseMesh)
+    : null;
   let emblemBox = new THREE.Box3().setFromObject(emblemMesh);
   if (baseBox) {
     if (inverse) {
