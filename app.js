@@ -721,6 +721,15 @@ function renderLibraryBrowser() {
       }
       renderLibraryBrowser();
     });
+    // Single-select mode: a fast double-click acts as confirm — load this item and close the modal.
+    card.addEventListener("dblclick", async (e) => {
+      if (libraryBrowserMode !== "single") return;
+      e.preventDefault();
+      libraryBrowserSelectedPath = item.path;
+      hideHoverPreview();
+      await loadLibrarySvgToSingle(item.path);
+      closeLibraryPreview();
+    });
     card.addEventListener("mouseenter", (e) => scheduleHoverPreview(item, e));
     card.addEventListener("mouseleave", hideHoverPreview);
     card.addEventListener("mousemove", (e) => {
