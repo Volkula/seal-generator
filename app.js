@@ -7,7 +7,7 @@ import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { Evaluator, Brush, SUBTRACTION } from "three-bvh-csg";
-import { applyForgeDisplacement, detectRoundFlatTop } from "./forge.js";
+import { applyForgeDisplacement, detectRoundFlatTop, makeForgeDiskGeometry } from "./forge.js";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
@@ -1144,7 +1144,9 @@ function makeGeneratedBaseMesh() {
   const thickness = Number(baseThicknessInput.value);
   const forgeOn = isBaseTextureActive();
   const segs = forgeOn ? 128 : 64;
-  let geometry = makeRoundBaseGeometry(diameter, thickness, segs, forgeOn);
+  let geometry = forgeOn
+    ? makeForgeDiskGeometry(diameter, thickness, Math.max(64, segs))
+    : makeRoundBaseGeometry(diameter, thickness, segs, false);
   if (forgeOn) {
     geometry = geometry.toNonIndexed();
     applyForgeDisplacement(geometry, getBaseTextureSettings(), {

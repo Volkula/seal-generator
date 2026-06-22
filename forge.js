@@ -1,5 +1,7 @@
 /** Procedural surface forge — real geometry displacement (not textures). */
 
+import * as THREE from "three";
+
 export function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -57,10 +59,12 @@ function generateForgeMarks(settings, box) {
   const marks = [];
   for (let iy = -halfN; iy <= halfN; iy++) {
     for (let ix = -halfN; ix <= halfN; ix++) {
-      if (forgedCellRand(ix, iy, 4) > 0.93) continue;
+      const cx = cxMid + (ix + 0.5) * cell + (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.45;
+      const cy = cyMid + (iy + 0.5) * cell + (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.45;
+      if (Math.hypot(cx - cxMid, cy - cyMid) > span * 0.48) continue;
       marks.push({
-        cx: cxMid + (ix + 0.5) * cell + (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.55,
-        cy: cyMid + (iy + 0.5) * cell + (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.55,
+        cx,
+        cy,
         angle: forgedCellRand(ix, iy, 3) * Math.PI,
       });
     }
@@ -79,7 +83,7 @@ function sampleHammerInfluence(x, y, ctx, settings) {
   for (const mark of ctx.marks) {
     sum += forgeMarkInfluenceAt(x, y, mark, ctx.cell, settings.markShape, settings.markSize);
   }
-  return (1 - Math.exp(-2.8 * sum)) * rimEdgeFactor(x, y, ctx);
+  return 1 - Math.exp(-2.2 * sum);
 }
 
 function sampleRingsInfluence(x, y, ctx, settings) {
@@ -93,8 +97,8 @@ function sampleRingsInfluence(x, y, ctx, settings) {
 
 function sampleKnurlInfluence(x, y, ctx, settings) {
   const s = ctx.cell * 0.5 * settings.markSize;
-  const px = (x - ctx.cxMid) / s;
-  const py = (y - ctx.cyMid) / s;
+  const px = (x - ctx.cxMid) / s + 0.25;
+  const py = (y - ctx.cyMid) / s + 0.25;
   const u = px + py;
   const v = px - py;
   const diamond = Math.abs(Math.sin(u * Math.PI)) * Math.abs(Math.sin(v * Math.PI));
@@ -117,7 +121,7 @@ function samplePittingInfluence(x, y, ctx, settings) {
     for (let dx = -1; dx <= 1; dx++) {
       const cx = ctx.cxMid + (ix + dx + 0.5) * ctx.cell + (forgedCellRand(ix + dx, iy + dy, 1) - 0.5) * ctx.cell * 0.4;
       const cy = ctx.cyMid + (iy + dy + 0.5) * ctx.cell + (forgedCellRand(ix + dx, iy + dy, 2) - 0.5) * ctx.cell * 0.4;
-      if (forgedCellRand(ix + dx, iy + dy, 4) > 0.82) continue;
+      if (forgedCellRand(ix + dx, iy + dy, 4) > 0.55) continue;
       const r = ctx.cell * 0.22 * settings.markSize;
       peak = Math.max(peak, forgeEllipticalInfluence(x - cx, y - cy, r, r));
     }
@@ -178,8 +182,82 @@ function sampleForgeInfluenceAt(x, y, ctx, settings) {
       raw = sampleHammerInfluence(x, y, ctx, settings);
       break;
   }
-  const grain = (forgedCellRand(Math.floor(x * 19), Math.floor(y * 19), 8) - 0.5) * 0.05;
+  const grain = (forgedCellRand(Math.floor(x * 19), Math.floor(y * 19), 8) - 0.5) * 0.02;
   return clampNumber(raw + grain * settings.strength, 0, 1);
+}
+
+/**
+ * Disk with a dense top grid so forge patterns sample correctly (not just rim verts).
+ */
+export function makeForgeDiskGeometry(diameter, thickness, gridRes = 96) {
+  const radius = diameter / 2;
+  const positions = [];
+  const indices = [];
+  const n = Math.max(32, gridRes);
+  const vertMap = new Int32Array((n + 1) * (n + 1)).fill(-1);
+  const vidx = (ix, iy) => iy * (n + 1) + ix;
+
+  for (let iy = 0; iy <= n; iy++) {
+    for (let ix = 0; ix <= n; ix++) {
+      const x = (ix / n) * 2 * radius - radius;
+      const y = (iy / n) * 2 * radius - radius;
+      if (x * x + y * y > radius * radius) continue;
+      vertMap[vidx(ix, iy)] = positions.length / 3;
+      positions.push(x, y, 0);
+    }
+  }
+
+  for (let iy = 0; iy < n; iy++) {
+    for (let ix = 0; ix < n; ix++) {
+      const a = vertMap[vidx(ix, iy)];
+      const b = vertMap[vidx(ix + 1, iy)];
+      const c = vertMap[vidx(ix + 1, iy + 1)];
+      const d = vertMap[vidx(ix, iy + 1)];
+      if (a >= 0 && b >= 0 && c >= 0) indices.push(a, b, c);
+      if (a >= 0 && c >= 0 && d >= 0) indices.push(a, c, d);
+    }
+  }
+
+  const rimTop = [];
+  const rimBottom = [];
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i];
+    const y = positions[i + 1];
+    const r = Math.hypot(x, y);
+    if (r < radius * 0.985) continue;
+    rimTop.push({ idx: i / 3, angle: Math.atan2(y, x) });
+  }
+  rimTop.sort((a, b) => a.angle - b.angle);
+  for (const rim of rimTop) {
+    const x = positions[rim.idx * 3];
+    const y = positions[rim.idx * 3 + 1];
+    positions.push(x, y, -thickness);
+    rimBottom.push(positions.length / 3 - 1);
+  }
+  const rimTopIdx = rimTop.map((r) => r.idx);
+
+  for (let i = 0; i < rimTopIdx.length; i++) {
+    const next = (i + 1) % rimTopIdx.length;
+    const a = rimTopIdx[i];
+    const b = rimTopIdx[next];
+    const c = rimBottom[next];
+    const d = rimBottom[i];
+    indices.push(a, b, c);
+    indices.push(a, c, d);
+  }
+
+  const bottomCenterIdx = positions.length / 3;
+  positions.push(0, 0, -thickness);
+  for (let i = 0; i < rimBottom.length; i++) {
+    const next = (i + 1) % rimBottom.length;
+    indices.push(bottomCenterIdx, rimBottom[i], rimBottom[next]);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 /**
@@ -191,15 +269,16 @@ export function applyForgeDisplacement(geometry, settings, options = {}) {
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   const thickness = Math.max(box.max.z - box.min.z, 0.001);
-  const depthMul = settings.preset === "pitting" ? 0.55 : 0.45;
-  const maxDepth = Math.min(thickness * depthMul * settings.strength, thickness * 0.48);
+  const maxDepth = Math.min(
+    Math.max(thickness * 0.42 * settings.strength, 0.12),
+    thickness * 0.55
+  );
   if (maxDepth <= 0.0005) return;
 
   const markData = generateForgeMarks(settings, box);
   const diskMode = !!options.diskMode;
   const diskRadius = options.diskRadius ?? Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5;
   const ctx = { ...markData, marks: markData.marks, diskMode, diskRadius };
-  if (!ctx.marks.length && settings.preset === "hammer") return;
 
   const pos = geometry.attributes.position;
   geometry.computeVertexNormals();
