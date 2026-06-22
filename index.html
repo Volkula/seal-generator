@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Seal Generator</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="./styles.css" />
     <script type="importmap">
       {
@@ -18,386 +23,403 @@
       }
     </script>
   </head>
-  <body data-theme="dark">
-    <aside class="panel">
-      <div class="topbar">
-        <label class="mini">
-          <span id="themeLabel">Theme</span>
-          <select id="themeSelect">
+  <body data-theme="dark" data-inspector="right">
+    <div class="app-shell">
+      <nav class="icon-rail" id="iconRail" aria-label="Panels">
+        <div class="rail-brand" aria-hidden="true"></div>
+        <button type="button" class="rail-btn active" data-panel="model" title="Model">
+          <span class="rail-icon">◆</span>
+          <span class="rail-label" id="railModelLabel">Model</span>
+        </button>
+        <button type="button" class="rail-btn" data-panel="base" title="Base">
+          <span class="rail-icon">◎</span>
+          <span class="rail-label" id="railBaseLabel">Base</span>
+        </button>
+        <button type="button" class="rail-btn" data-panel="batch" title="Batch">
+          <span class="rail-icon">▦</span>
+          <span class="rail-label" id="railBatchLabel">Batch</span>
+        </button>
+        <button type="button" class="rail-btn" data-panel="view" title="View">
+          <span class="rail-icon">👁</span>
+          <span class="rail-label" id="railViewLabel">View</span>
+        </button>
+        <div class="rail-spacer"></div>
+        <label class="rail-mini" title="Theme">
+          <select id="themeSelect" aria-label="Theme">
             <option value="dark">Dark</option>
             <option value="light">Light</option>
           </select>
         </label>
-        <label class="mini">
-          <span id="langLabel">Language</span>
-          <select id="langSelect">
+        <label class="rail-mini" title="Language">
+          <select id="langSelect" aria-label="Language">
             <option value="en">EN</option>
             <option value="ru">RU</option>
           </select>
         </label>
-        <label class="mini">
-          <span id="sidebarSideLabel">Sidebar</span>
-          <select id="sidebarSideSelect">
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-          </select>
-        </label>
-      </div>
+      </nav>
 
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true"></div>
-        <div>
-          <h1 id="title">Seal Generator</h1>
-          <p class="hint" id="subtitle">SVG -> STL with live 3D preview</p>
-        </div>
-      </div>
-
-      <details class="accordion view-panel" open>
-        <summary id="viewSectionLabel">View & Export</summary>
-        <div class="tool-box">
-          <h3 id="box1Label">1. Gizmo & View</h3>
-          <label class="field checkbox">
-            <input id="wireframeMode" type="checkbox" />
-            <span id="wireframeModeLabel">Wireframe preview</span>
-          </label>
-          <label class="field checkbox">
-            <input id="gizmoEnabled" type="checkbox" checked />
-            <span id="gizmoEnabledLabel">Enable gizmo</span>
-          </label>
-          <label class="field">
-            <span id="gizmoTargetLabel">Gizmo target</span>
-            <select id="gizmoTarget">
-              <option value="emblem">Emblem</option>
-              <option value="base">Base</option>
-            </select>
-          </label>
-          <button id="gizmoModeBtn">Gizmo: Translate</button>
-        </div>
-
-        <div class="tool-box">
-          <h3 id="box2Label">2. Selected Object</h3>
-          <p class="hint" id="selectedObjectLabel">Selected: Emblem</p>
-          <div id="emblemOffsetGroup">
-            <label class="field">
-              <span id="emblemOffsetXLabel">Emblem offset X (mm)</span>
-              <div class="range-row">
-                <input id="emblemOffsetX" type="range" min="-400" max="400" step="0.1" value="0" />
-                <input id="emblemOffsetXValue" type="number" min="-400" max="400" step="0.1" value="0" />
-              </div>
-            </label>
-            <label class="field">
-              <span id="emblemOffsetYLabel">Emblem offset Y (mm)</span>
-              <div class="range-row">
-                <input id="emblemOffsetY" type="range" min="-400" max="400" step="0.1" value="0" />
-                <input id="emblemOffsetYValue" type="number" min="-400" max="400" step="0.1" value="0" />
-              </div>
-            </label>
-            <label class="field">
-              <span id="emblemOffsetZLabel">Emblem offset Z (mm)</span>
-              <div class="range-row">
-                <input id="emblemOffsetZ" type="range" min="-400" max="400" step="0.1" value="0" />
-                <input id="emblemOffsetZValue" type="number" min="-400" max="400" step="0.1" value="0" />
-              </div>
-            </label>
+      <div class="workspace">
+        <div class="viewport-wrap">
+          <main id="viewport"></main>
+          <div class="viewport-hud">
+            <div class="hud-group">
+              <button type="button" id="viewTopBtn" class="hud-btn">Top</button>
+              <button type="button" id="viewFrontBtn" class="hud-btn">Front</button>
+              <button type="button" id="viewIsoBtn" class="hud-btn">Iso</button>
+              <button type="button" id="flatViewBtn" class="hud-btn">Flat</button>
+            </div>
+            <div class="hud-group">
+              <label class="hud-toggle">
+                <input id="wireframeMode" type="checkbox" />
+                <span id="wireframeModeLabel">Wire</span>
+              </label>
+              <label class="hud-toggle">
+                <input id="matcapMode" type="checkbox" checked />
+                <span id="matcapModeLabel">Metal</span>
+              </label>
+            </div>
           </div>
-          <div id="baseOffsetGroup" style="display:none">
-            <label class="field">
-              <span id="baseOffsetXLabel">Base offset X (mm)</span>
-              <div class="range-row">
-                <input id="baseOffsetX" type="range" min="-400" max="400" step="0.1" value="0" />
-                <input id="baseOffsetXValue" type="number" min="-400" max="400" step="0.1" value="0" />
-              </div>
-            </label>
-            <label class="field">
-              <span id="baseOffsetYLabel">Base offset Y (mm)</span>
-              <div class="range-row">
-                <input id="baseOffsetY" type="range" min="-400" max="400" step="0.1" value="0" />
-                <input id="baseOffsetYValue" type="number" min="-400" max="400" step="0.1" value="0" />
-              </div>
-            </label>
-            <label class="field">
-              <span id="baseOffsetZLabel">Base offset Z (mm)</span>
-              <div class="range-row">
-                <input id="baseOffsetZ" type="range" min="-400" max="400" step="0.1" value="0" />
-                <input id="baseOffsetZValue" type="number" min="-400" max="400" step="0.1" value="0" />
-              </div>
-            </label>
+          <div id="progressOverlay" class="progress-overlay hidden" aria-live="polite">
+            <div class="progress-card">
+              <p id="progressLabel">Exporting…</p>
+              <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+            </div>
           </div>
         </div>
 
-        <button id="flatViewBtn">Flat View</button>
-        <button id="exportBtn" disabled>Export STL</button>
-        <button id="exportCombinedBtn" disabled>Export STL (with base)</button>
-        <button id="exportZipBtn" disabled>Export ZIP (batch)</button>
-        <div class="row-buttons">
-          <button id="undoBtn">Undo</button>
-          <button id="redoBtn">Redo</button>
-        </div>
-        <div class="row-buttons">
-          <button id="resetSettingsBtn">Reset Settings</button>
-          <button id="clearCacheBtn">Clear Cache</button>
-        </div>
-      </details>
+        <aside class="inspector" id="inspector">
+          <header class="inspector-head">
+            <h2 id="inspectorTitle">Model</h2>
+            <p class="inspector-sub" id="subtitle">SVG → STL with live 3D preview</p>
+          </header>
 
-      <pre id="status">Load an SVG to start.</pre>
-      <p class="license-note" id="licenseNote">
-        All code and visual assets in this repo are released under CC0 1.0 (public domain).
-      </p>
-    </aside>
-
-    <main id="viewport"></main>
-
-    <div id="floatingPanelsSource">
-      <section id="modelWindowContent" class="floating-content">
-        <h3 id="modelSectionLabel">Model</h3>
-          <label class="field">
-            <span id="libraryCategoryLabel">Library category</span>
-            <select id="libraryCategory"></select>
-          </label>
-          <label class="field">
-            <span id="librarySingleLabel">Library SVG (single)</span>
-            <select id="librarySingle"></select>
-          </label>
-          <button id="libraryPreviewBtn">Open library browser</button>
-          <button id="libraryLoadSingleBtn">Load from library</button>
-          <label class="field">
-            <span id="svgFileLabel">SVG file</span>
-            <input id="svgFile" type="file" accept=".svg,image/svg+xml" multiple />
-          </label>
-
-          <label class="field">
-            <span id="sizeLabel">Size (max dimension, mm)</span>
-            <div class="range-row">
-              <input id="size" type="range" min="10" max="200" step="1" value="60" />
-              <input id="sizeValue" type="number" min="10" max="200" step="1" value="60" />
-            </div>
-          </label>
-
-          <label class="field">
-            <span id="thicknessLabel">Thickness (mm)</span>
-            <div class="range-row">
-              <input id="thickness" type="range" min="0.5" max="20" step="0.1" value="2" />
-              <input id="thicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
-            </div>
-          </label>
-
-          <label class="field">
-            <span id="scaleXLabel">Scale X</span>
-            <div class="range-row">
-              <input id="scaleX" type="range" min="0.1" max="3" step="0.01" value="1" />
-              <input id="scaleXValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
-            </div>
-          </label>
-
-          <label class="field">
-            <span id="scaleYLabel">Scale Y</span>
-            <div class="range-row">
-              <input id="scaleY" type="range" min="0.1" max="3" step="0.01" value="1" />
-              <input id="scaleYValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
-            </div>
-          </label>
-
-          <label class="field">
-            <span id="scaleZLabel">Scale Z</span>
-            <div class="range-row">
-              <input id="scaleZ" type="range" min="0.1" max="3" step="0.01" value="1" />
-              <input id="scaleZValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
-            </div>
-          </label>
-
-          <label class="field">
-            <span id="densityLabel">Line density</span>
-            <input id="density" type="range" min="4" max="64" step="1" value="16" />
-            <output id="densityOut">16</output>
-          </label>
-
-          <label class="field checkbox">
-            <input id="autoFix" type="checkbox" checked />
-            <span id="autoFixLabel">Auto-fix unclosed faces</span>
-          </label>
-
-          <label class="field checkbox">
-            <input id="flipY" type="checkbox" checked />
-            <span id="flipYLabel">Flip vertically (top-bottom)</span>
-          </label>
-
-          <label class="field checkbox">
-            <input id="flipX" type="checkbox" checked />
-            <span id="flipXLabel">Flip horizontally (left-right)</span>
-          </label>
-
-          <label class="field checkbox">
-            <input id="inverseMode" type="checkbox" />
-            <span id="inverseModeLabel">Inverse (negative stamp)</span>
-          </label>
-      </section>
-
-      <section id="baseWindowContent" class="floating-content">
-          <h3 id="baseSectionLabel">Base</h3>
-          <label class="field checkbox">
-            <input id="generateBase" type="checkbox" />
-            <span id="generateBaseLabel">Generate round disk base</span>
-          </label>
-
-          <label class="field">
-            <span id="baseDiameterLabel">Base diameter (mm)</span>
-            <div class="range-row">
-              <input id="baseDiameter" type="range" min="10" max="200" step="1" value="40" />
-              <input id="baseDiameterValue" type="number" min="10" max="200" step="1" value="40" />
-            </div>
-          </label>
-
-          <label class="field">
-            <span id="baseThicknessLabel">Base thickness (mm)</span>
-            <div class="range-row">
-              <input id="baseThickness" type="range" min="0.5" max="20" step="0.1" value="2" />
-              <input id="baseThicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
-            </div>
-          </label>
-
-          <div id="baseTextureWrap" class="base-texture-panel">
+          <section id="panelModel" class="inspector-panel active">
+            <label class="field">
+              <span id="libraryCategoryLabel">Library category</span>
+              <select id="libraryCategory"></select>
+            </label>
+            <label class="field">
+              <span id="librarySingleLabel">Library SVG (single)</span>
+              <select id="librarySingle"></select>
+            </label>
+            <button id="libraryPreviewBtn">Open library browser</button>
+            <button id="libraryLoadSingleBtn">Load from library</button>
+            <label class="field">
+              <span id="svgFileLabel">SVG file</span>
+              <input id="svgFile" type="file" accept=".svg,image/svg+xml" multiple />
+            </label>
+            <label class="field">
+              <span id="sizeLabel">Size (max dimension, mm)</span>
+              <div class="range-row">
+                <input id="size" type="range" min="10" max="200" step="1" value="60" />
+                <input id="sizeValue" type="number" min="10" max="200" step="1" value="60" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="thicknessLabel">Thickness (mm)</span>
+              <div class="range-row">
+                <input id="thickness" type="range" min="0.5" max="20" step="0.1" value="2" />
+                <input id="thicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="scaleXLabel">Scale X</span>
+              <div class="range-row">
+                <input id="scaleX" type="range" min="0.1" max="3" step="0.01" value="1" />
+                <input id="scaleXValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="scaleYLabel">Scale Y</span>
+              <div class="range-row">
+                <input id="scaleY" type="range" min="0.1" max="3" step="0.01" value="1" />
+                <input id="scaleYValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="scaleZLabel">Scale Z</span>
+              <div class="range-row">
+                <input id="scaleZ" type="range" min="0.1" max="3" step="0.01" value="1" />
+                <input id="scaleZValue" type="number" min="0.1" max="3" step="0.01" value="1.00" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="densityLabel">Line density</span>
+              <input id="density" type="range" min="4" max="64" step="1" value="16" />
+              <output id="densityOut">16</output>
+            </label>
             <label class="field checkbox">
-              <input id="baseTextureEnabled" type="checkbox" />
-              <span id="baseTextureEnabledLabel">Surface forging (dents)</span>
+              <input id="autoFix" type="checkbox" checked />
+              <span id="autoFixLabel">Auto-fix unclosed faces</span>
             </label>
-            <div id="baseTextureControls" hidden>
+            <label class="field checkbox">
+              <input id="flipY" type="checkbox" checked />
+              <span id="flipYLabel">Flip vertically (top-bottom)</span>
+            </label>
+            <label class="field checkbox">
+              <input id="flipX" type="checkbox" checked />
+              <span id="flipXLabel">Flip horizontally (left-right)</span>
+            </label>
+            <label class="field checkbox">
+              <input id="inverseMode" type="checkbox" />
+              <span id="inverseModeLabel">Inverse (negative stamp)</span>
+            </label>
+          </section>
+
+          <section id="panelBase" class="inspector-panel" hidden>
+            <label class="field checkbox">
+              <input id="generateBase" type="checkbox" />
+              <span id="generateBaseLabel">Generate round disk base</span>
+            </label>
+            <label class="field">
+              <span id="baseDiameterLabel">Base diameter (mm)</span>
+              <div class="range-row">
+                <input id="baseDiameter" type="range" min="10" max="200" step="1" value="40" />
+                <input id="baseDiameterValue" type="number" min="10" max="200" step="1" value="40" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="baseThicknessLabel">Base thickness (mm)</span>
+              <div class="range-row">
+                <input id="baseThickness" type="range" min="0.5" max="20" step="0.1" value="2" />
+                <input id="baseThicknessValue" type="number" min="0.5" max="20" step="0.1" value="2.0" />
+              </div>
+            </label>
+            <div id="baseTextureWrap" class="forge-panel">
+              <label class="field checkbox">
+                <input id="baseTextureEnabled" type="checkbox" />
+                <span id="baseTextureEnabledLabel">Surface forging (dents)</span>
+              </label>
+              <p class="hint forge-hint" id="forgeHint">Enables disk base and displaces top surface geometry.</p>
+              <div id="baseTextureControls" hidden>
+                <label class="field">
+                  <span id="baseTexturePresetLabel">Surface effect</span>
+                  <select id="baseTexturePreset">
+                    <option value="hammer">Hammer forge</option>
+                    <option value="rings">Concentric rings</option>
+                    <option value="knurl">Diamond knurl</option>
+                    <option value="roll">Rolling lines</option>
+                    <option value="pitting">Random pitting</option>
+                    <option value="sunburst">Sunburst rays</option>
+                    <option value="hex">Hex grid</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span id="baseTextureFrequencyLabel">Pattern frequency</span>
+                  <div class="range-row">
+                    <input id="baseTextureFrequency" type="range" min="2" max="48" step="1" value="10" />
+                    <input id="baseTextureFrequencyValue" type="number" min="2" max="48" step="1" value="10" />
+                  </div>
+                </label>
+                <label class="field" id="markShapeField">
+                  <span id="baseTextureMarkShapeLabel">Mark shape</span>
+                  <select id="baseTextureMarkShape">
+                    <option value="circle">Round hammer</option>
+                    <option value="oval">Oval strike</option>
+                    <option value="strike">Linear brush</option>
+                    <option value="cross">Cross forge</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span id="baseTextureMarkSizeLabel">Mark size</span>
+                  <div class="range-row">
+                    <input id="baseTextureMarkSize" type="range" min="0.15" max="1.8" step="0.05" value="0.75" />
+                    <input id="baseTextureMarkSizeValue" type="number" min="0.15" max="1.8" step="0.05" value="0.75" />
+                  </div>
+                </label>
+                <label class="field">
+                  <span id="baseTextureStrengthLabel">Dent depth</span>
+                  <div class="range-row">
+                    <input id="baseTextureStrength" type="range" min="0.1" max="1" step="0.05" value="0.9" />
+                    <input id="baseTextureStrengthValue" type="number" min="0.1" max="1" step="0.05" value="0.90" />
+                  </div>
+                </label>
+              </div>
+            </div>
+            <label class="field">
+              <span id="baseStlLabel">Extra base STL (add-on)</span>
+              <div class="range-row">
+                <input id="baseStlFile" type="file" accept=".stl,model/stl" />
+                <button id="baseStlClearBtn" type="button" class="ghost" disabled>Remove STL</button>
+              </div>
+            </label>
+            <p class="hint" id="baseStlHint">Stacked under the round disk when both are on.</p>
+            <div id="stlAddonTransformWrap" class="stl-addon-transforms" hidden>
               <label class="field">
-                <span id="baseTexturePresetLabel">Forge preset</span>
-                <select id="baseTexturePreset">
-                  <option value="forgedMetal">Forged metal</option>
+                <span id="stlAddonOffsetXLabel">Add-on STL offset X (mm)</span>
+                <div class="range-row">
+                  <input id="stlAddonOffsetX" type="range" min="-200" max="200" step="0.1" value="0" />
+                  <input id="stlAddonOffsetXValue" type="number" min="-200" max="200" step="0.1" value="0" />
+                </div>
+              </label>
+              <label class="field">
+                <span id="stlAddonOffsetYLabel">Add-on STL offset Y (mm)</span>
+                <div class="range-row">
+                  <input id="stlAddonOffsetY" type="range" min="-200" max="200" step="0.1" value="0" />
+                  <input id="stlAddonOffsetYValue" type="number" min="-200" max="200" step="0.1" value="0" />
+                </div>
+              </label>
+              <label class="field">
+                <span id="stlAddonOffsetZLabel">Add-on STL offset Z (mm)</span>
+                <div class="range-row">
+                  <input id="stlAddonOffsetZ" type="range" min="-200" max="200" step="0.1" value="0" />
+                  <input id="stlAddonOffsetZValue" type="number" min="-200" max="200" step="0.1" value="0" />
+                </div>
+              </label>
+              <label class="field">
+                <span id="stlAddonScaleLabel">Add-on STL scale</span>
+                <div class="range-row">
+                  <input id="stlAddonScale" type="range" min="0.05" max="5" step="0.01" value="1" />
+                  <input id="stlAddonScaleValue" type="number" min="0.05" max="5" step="0.01" value="1" />
+                </div>
+              </label>
+            </div>
+            <label class="field">
+              <span id="liftLabel">Lift over base (mm)</span>
+              <div class="range-row">
+                <input id="lift" type="range" min="0" max="5" step="0.1" value="0.2" />
+                <input id="liftValue" type="number" min="0" max="5" step="0.1" value="0.2" />
+              </div>
+            </label>
+            <label class="field">
+              <span id="fitInsetPctLabel">Fit margin from base edge (%)</span>
+              <input id="fitInsetPct" type="number" min="0" max="45" step="1" value="10" />
+            </label>
+            <label class="field">
+              <span id="insetLabel">Inset depth (inverse, mm)</span>
+              <div class="range-row">
+                <input id="inset" type="range" min="0" max="10" step="0.1" value="1.0" />
+                <input id="insetValue" type="number" min="0" max="10" step="0.1" value="1.0" />
+              </div>
+            </label>
+            <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
+            <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
+          </section>
+
+          <section id="panelBatch" class="inspector-panel" hidden>
+            <label class="field">
+              <span id="batchFitRatioLabel">Batch fit ratio</span>
+              <input id="batchFitRatio" type="number" min="0.5" max="1.2" step="0.01" value="0.90" />
+            </label>
+            <label class="field">
+              <span id="batchLiftLabel">Batch lift over base (mm)</span>
+              <input id="batchLift" type="number" min="0" max="5" step="0.1" value="0.2" />
+            </label>
+            <label class="field">
+              <span id="batchInsetLabel">Batch inset depth (inverse, mm)</span>
+              <input id="batchInset" type="number" min="0" max="10" step="0.1" value="1.0" />
+            </label>
+            <button id="batchPreviewBtn">Open library browser</button>
+            <label class="field">
+              <span id="batchSelectionLabel">Selected batch items</span>
+              <div id="batchSelectionList" class="batch-selection-list"></div>
+            </label>
+            <button id="batchClearSelectionBtn">Clear selected</button>
+            <label class="field">
+              <span id="batchSvgLabel">Batch SVG files</span>
+              <input id="batchSvgFiles" type="file" accept=".svg,image/svg+xml" multiple />
+            </label>
+            <label class="field checkbox">
+              <input id="batchInverseMode" type="checkbox" />
+              <span id="batchInverseLabel">Batch inverse mode</span>
+            </label>
+            <button id="batchExportBtn" disabled>Export Batch ZIP (fit to base)</button>
+          </section>
+
+          <section id="panelView" class="inspector-panel" hidden>
+            <div class="tool-box">
+              <h3 id="box1Label">Gizmo & View</h3>
+              <label class="field checkbox">
+                <input id="gizmoEnabled" type="checkbox" checked />
+                <span id="gizmoEnabledLabel">Enable gizmo</span>
+              </label>
+              <label class="field">
+                <span id="gizmoTargetLabel">Gizmo target</span>
+                <select id="gizmoTarget">
+                  <option value="emblem">Emblem</option>
+                  <option value="base">Base</option>
                 </select>
               </label>
-              <label class="field">
-                <span id="baseTextureFrequencyLabel">Pattern frequency</span>
-                <div class="range-row">
-                  <input id="baseTextureFrequency" type="range" min="2" max="48" step="1" value="12" />
-                  <input id="baseTextureFrequencyValue" type="number" min="2" max="48" step="1" value="12" />
-                </div>
-              </label>
-              <label class="field">
-                <span id="baseTextureMarkShapeLabel">Mark shape</span>
-                <select id="baseTextureMarkShape">
-                  <option value="circle">Round hammer</option>
-                  <option value="oval">Oval strike</option>
-                  <option value="strike">Linear brush</option>
-                  <option value="cross">Cross forge</option>
-                </select>
-              </label>
-              <label class="field">
-                <span id="baseTextureMarkSizeLabel">Mark size</span>
-                <div class="range-row">
-                  <input id="baseTextureMarkSize" type="range" min="0.15" max="1.8" step="0.05" value="0.65" />
-                  <input id="baseTextureMarkSizeValue" type="number" min="0.15" max="1.8" step="0.05" value="0.65" />
-                </div>
-              </label>
-              <label class="field">
-                <span id="baseTextureStrengthLabel">Dent depth</span>
-                <div class="range-row">
-                  <input id="baseTextureStrength" type="range" min="0.1" max="1" step="0.05" value="0.75" />
-                  <input id="baseTextureStrengthValue" type="number" min="0.1" max="1" step="0.05" value="0.75" />
-                </div>
-              </label>
+              <button id="gizmoModeBtn">Gizmo: Translate</button>
             </div>
-          </div>
-
-          <label class="field">
-            <span id="baseStlLabel">Extra base STL (add-on)</span>
-            <div class="range-row">
-              <input id="baseStlFile" type="file" accept=".stl,model/stl" />
-              <button id="baseStlClearBtn" type="button" class="ghost" disabled>Remove STL</button>
+            <div class="tool-box">
+              <h3 id="box2Label">Selected Object</h3>
+              <p class="hint" id="selectedObjectLabel">Selected: Emblem</p>
+              <div id="emblemOffsetGroup">
+                <label class="field">
+                  <span id="emblemOffsetXLabel">Emblem offset X (mm)</span>
+                  <div class="range-row">
+                    <input id="emblemOffsetX" type="range" min="-400" max="400" step="0.1" value="0" />
+                    <input id="emblemOffsetXValue" type="number" min="-400" max="400" step="0.1" value="0" />
+                  </div>
+                </label>
+                <label class="field">
+                  <span id="emblemOffsetYLabel">Emblem offset Y (mm)</span>
+                  <div class="range-row">
+                    <input id="emblemOffsetY" type="range" min="-400" max="400" step="0.1" value="0" />
+                    <input id="emblemOffsetYValue" type="number" min="-400" max="400" step="0.1" value="0" />
+                  </div>
+                </label>
+                <label class="field">
+                  <span id="emblemOffsetZLabel">Emblem offset Z (mm)</span>
+                  <div class="range-row">
+                    <input id="emblemOffsetZ" type="range" min="-400" max="400" step="0.1" value="0" />
+                    <input id="emblemOffsetZValue" type="number" min="-400" max="400" step="0.1" value="0" />
+                  </div>
+                </label>
+              </div>
+              <div id="baseOffsetGroup" style="display:none">
+                <label class="field">
+                  <span id="baseOffsetXLabel">Base offset X (mm)</span>
+                  <div class="range-row">
+                    <input id="baseOffsetX" type="range" min="-400" max="400" step="0.1" value="0" />
+                    <input id="baseOffsetXValue" type="number" min="-400" max="400" step="0.1" value="0" />
+                  </div>
+                </label>
+                <label class="field">
+                  <span id="baseOffsetYLabel">Base offset Y (mm)</span>
+                  <div class="range-row">
+                    <input id="baseOffsetY" type="range" min="-400" max="400" step="0.1" value="0" />
+                    <input id="baseOffsetYValue" type="number" min="-400" max="400" step="0.1" value="0" />
+                  </div>
+                </label>
+                <label class="field">
+                  <span id="baseOffsetZLabel">Base offset Z (mm)</span>
+                  <div class="range-row">
+                    <input id="baseOffsetZ" type="range" min="-400" max="400" step="0.1" value="0" />
+                    <input id="baseOffsetZValue" type="number" min="-400" max="400" step="0.1" value="0" />
+                  </div>
+                </label>
+              </div>
             </div>
-          </label>
-          <p class="hint" id="baseStlHint">Stacked under the round disk when both are on; alone if only STL is loaded.</p>
-
-          <div id="stlAddonTransformWrap" class="stl-addon-transforms" hidden>
-            <label class="field">
-              <span id="stlAddonOffsetXLabel">Add-on STL offset X (mm)</span>
-              <div class="range-row">
-                <input id="stlAddonOffsetX" type="range" min="-200" max="200" step="0.1" value="0" />
-                <input id="stlAddonOffsetXValue" type="number" min="-200" max="200" step="0.1" value="0" />
-              </div>
+            <label class="field mini-field">
+              <span id="sidebarSideLabel">Inspector side</span>
+              <select id="sidebarSideSelect">
+                <option value="right">Right</option>
+                <option value="left">Left</option>
+              </select>
             </label>
-            <label class="field">
-              <span id="stlAddonOffsetYLabel">Add-on STL offset Y (mm)</span>
-              <div class="range-row">
-                <input id="stlAddonOffsetY" type="range" min="-200" max="200" step="0.1" value="0" />
-                <input id="stlAddonOffsetYValue" type="number" min="-200" max="200" step="0.1" value="0" />
-              </div>
-            </label>
-            <label class="field">
-              <span id="stlAddonOffsetZLabel">Add-on STL offset Z (mm)</span>
-              <div class="range-row">
-                <input id="stlAddonOffsetZ" type="range" min="-200" max="200" step="0.1" value="0" />
-                <input id="stlAddonOffsetZValue" type="number" min="-200" max="200" step="0.1" value="0" />
-              </div>
-            </label>
-            <label class="field">
-              <span id="stlAddonScaleLabel">Add-on STL scale</span>
-              <div class="range-row">
-                <input id="stlAddonScale" type="range" min="0.05" max="5" step="0.01" value="1" />
-                <input id="stlAddonScaleValue" type="number" min="0.05" max="5" step="0.01" value="1" />
-              </div>
-            </label>
-          </div>
-
-          <label class="field">
-            <span id="liftLabel">Lift over base (mm)</span>
-            <div class="range-row">
-              <input id="lift" type="range" min="0" max="5" step="0.1" value="0.2" />
-              <input id="liftValue" type="number" min="0" max="5" step="0.1" value="0.2" />
+            <div class="export-block">
+              <button id="exportBtn" class="btn-export" disabled>Export STL</button>
+              <button id="exportCombinedBtn" class="btn-export-combined" disabled>Export STL (with base)</button>
+              <button id="exportZipBtn" class="btn-export-zip" disabled>Export ZIP (batch)</button>
             </div>
-          </label>
-
-          <label class="field">
-            <span id="fitInsetPctLabel">Fit margin from base edge (%)</span>
-            <input id="fitInsetPct" type="number" min="0" max="45" step="1" value="10" />
-          </label>
-
-          <label class="field">
-            <span id="insetLabel">Inset depth (inverse, mm)</span>
-            <div class="range-row">
-              <input id="inset" type="range" min="0" max="10" step="0.1" value="1.0" />
-              <input id="insetValue" type="number" min="0" max="10" step="0.1" value="1.0" />
+            <div class="row-buttons">
+              <button id="undoBtn">Undo</button>
+              <button id="redoBtn">Redo</button>
             </div>
-          </label>
-
-          <button id="fitBaseToEmblemBtn">Auto-fit base to emblem</button>
-          <button id="fitEmblemToBaseBtn">Auto-fit emblem to base</button>
-      </section>
-
-      <section id="batchWindowContent" class="floating-content">
-          <h3 id="batchSectionLabel">Batch</h3>
-          <label class="field">
-            <span id="batchFitRatioLabel">Batch fit ratio</span>
-            <input id="batchFitRatio" type="number" min="0.5" max="1.2" step="0.01" value="0.90" />
-          </label>
-          <label class="field">
-            <span id="batchLiftLabel">Batch lift over base (mm)</span>
-            <input id="batchLift" type="number" min="0" max="5" step="0.1" value="0.2" />
-          </label>
-          <label class="field">
-            <span id="batchInsetLabel">Batch inset depth (inverse, mm)</span>
-            <input id="batchInset" type="number" min="0" max="10" step="0.1" value="1.0" />
-          </label>
-          <button id="batchPreviewBtn">Open library browser</button>
-          <label class="field">
-            <span id="batchSelectionLabel">Selected batch items</span>
-            <div id="batchSelectionList" class="batch-selection-list"></div>
-          </label>
-          <button id="batchClearSelectionBtn">Clear selected</button>
-          <label class="field">
-            <span id="batchSvgLabel">Batch SVG files</span>
-            <input id="batchSvgFiles" type="file" accept=".svg,image/svg+xml" multiple />
-          </label>
-          <label class="field checkbox">
-            <input id="batchInverseMode" type="checkbox" />
-            <span id="batchInverseLabel">Batch inverse mode</span>
-          </label>
-          <button id="batchExportBtn" disabled>Export Batch ZIP (fit to base)</button>
-      </section>
+            <div class="row-buttons">
+              <button id="resetSettingsBtn">Reset Settings</button>
+              <button id="clearCacheBtn">Clear Cache</button>
+            </div>
+            <pre id="status">Load an SVG to start.</pre>
+            <p class="license-note" id="licenseNote">
+              All code and visual assets in this repo are released under CC0 1.0 (public domain).
+            </p>
+          </section>
+        </aside>
+      </div>
     </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js"></script>
 
     <div id="libraryPreviewModal" class="modal hidden">
       <div class="modal-card">
@@ -429,7 +451,6 @@
       </div>
     </div>
 
-    <!-- ES modules cannot load from file:// — use serve.bat / serve.ps1 / python -m http.server 8080 / npm start -->
     <script type="module" src="./app.js"></script>
   </body>
-  </html>
+</html>

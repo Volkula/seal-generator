@@ -7,6 +7,7 @@ import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import JSZip from "https://esm.sh/jszip@3.10.1";
 import { Evaluator, Brush, SUBTRACTION } from "three-bvh-csg";
+import { applyForgeDisplacement, detectRoundFlatTop } from "./forge.js";
 
 const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
@@ -89,9 +90,17 @@ const emblemOffsetGroup = document.getElementById("emblemOffsetGroup");
 const baseOffsetGroup = document.getElementById("baseOffsetGroup");
 const selectedObjectLabel = document.getElementById("selectedObjectLabel");
 const statusEl = document.getElementById("status");
-const modelWindowContent = document.getElementById("modelWindowContent");
-const baseWindowContent = document.getElementById("baseWindowContent");
-const batchWindowContent = document.getElementById("batchWindowContent");
+const inspectorTitleEl = document.getElementById("inspectorTitle");
+const iconRail = document.getElementById("iconRail");
+const matcapModeInput = document.getElementById("matcapMode");
+const viewTopBtn = document.getElementById("viewTopBtn");
+const viewFrontBtn = document.getElementById("viewFrontBtn");
+const viewIsoBtn = document.getElementById("viewIsoBtn");
+const progressOverlay = document.getElementById("progressOverlay");
+const progressLabel = document.getElementById("progressLabel");
+const progressBar = document.getElementById("progressBar");
+const markShapeField = document.getElementById("markShapeField");
+const forgeHint = document.getElementById("forgeHint");
 const batchSvgFilesInput = document.getElementById("batchSvgFiles");
 const batchInverseModeInput = document.getElementById("batchInverseMode");
 const batchExportBtn = document.getElementById("batchExportBtn");
@@ -147,9 +156,9 @@ csgEvaluator.useGroups = false;
 const gizmoModes = ["translate", "rotate", "scale"];
 let gizmoModeIndex = 0;
 let selectedObjectType = "emblem";
-let modelWindow = null;
-let baseWindow = null;
-let batchWindow = null;
+let activeInspectorPanel = "model";
+let matcapTexture = null;
+const textureLoader = new THREE.TextureLoader();
 const DEBUG = true;
 
 /** Matches emblem/base offset sliders and number clamps (±mm). */
@@ -204,8 +213,20 @@ const i18n = {
     baseDiameter: "Base diameter (mm)",
     baseThickness: "Base thickness (mm)",
     baseTextureEnabled: "Surface forging (dents)",
-    baseTexturePreset: "Forge preset",
-    baseTexturePresetForged: "Forged metal",
+    baseTexturePreset: "Surface effect",
+    baseTexturePresetForged: "Hammer forge",
+    baseTexturePresetRings: "Concentric rings",
+    baseTexturePresetKnurl: "Diamond knurl",
+    baseTexturePresetRoll: "Rolling lines",
+    baseTexturePresetPitting: "Random pitting",
+    baseTexturePresetSunburst: "Sunburst rays",
+    baseTexturePresetHex: "Hex grid",
+    forgeHint: "Auto-enables disk base. Dents are real geometry in exported STL.",
+    matcapMode: "Metal shading",
+    viewTop: "Top",
+    viewFront: "Front",
+    viewIso: "Iso",
+    inspectorSide: "Inspector side",
     baseTextureFrequency: "Pattern frequency",
     baseTextureMarkShape: "Mark shape",
     baseTextureMarkCircle: "Round hammer",
@@ -313,8 +334,20 @@ const i18n = {
     baseDiameter: "Диаметр основания (мм)",
     baseThickness: "Толщина основания (мм)",
     baseTextureEnabled: "Ковка поверхности (вмятины)",
-    baseTexturePreset: "Пресет ковки",
-    baseTexturePresetForged: "Кованый металл",
+    baseTexturePreset: "Эффект поверхности",
+    baseTexturePresetForged: "Ковка молотом",
+    baseTexturePresetRings: "Концентрические кольца",
+    baseTexturePresetKnurl: "Ромбовидная накатка",
+    baseTexturePresetRoll: "Линии прокатки",
+    baseTexturePresetPitting: "Случайная питтинг",
+    baseTexturePresetSunburst: "Лучи от центра",
+    baseTexturePresetHex: "Соты",
+    forgeHint: "Включает диск. Вмятины — реальная геометрия в STL.",
+    matcapMode: "Металл",
+    viewTop: "Сверху",
+    viewFront: "Спереди",
+    viewIso: "Изо",
+    inspectorSide: "Сторона инспектора",
     baseTextureFrequency: "Частота узора",
     baseTextureMarkShape: "Форма следов",
     baseTextureMarkCircle: "Круглый удар",
@@ -401,6 +434,8 @@ camera.position.set(120, -120, 80);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 viewport.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -483,12 +518,23 @@ transformControls.addEventListener("mouseUp", () => {
 });
 scene.add(transformControls);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
-keyLight.position.set(100, 160, 120);
+scene.add(new THREE.AmbientLight(0xfff5e8, 0.55));
+const keyLight = new THREE.DirectionalLight(0xffeedd, 1.15);
+keyLight.position.set(80, -60, 140);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(1024, 1024);
+keyLight.shadow.camera.near = 10;
+keyLight.shadow.camera.far = 400;
+keyLight.shadow.camera.left = -120;
+keyLight.shadow.camera.right = 120;
+keyLight.shadow.camera.top = 120;
+keyLight.shadow.camera.bottom = -120;
 scene.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0xaabbff, 0.35);
+fillLight.position.set(-100, 80, 40);
+scene.add(fillLight);
 
-let grid = new THREE.GridHelper(400, 40, 0x3d444d, 0x2d333b);
+let grid = new THREE.GridHelper(400, 40, 0x3d3428, 0x2a241c);
 grid.rotateX(Math.PI / 2);
 scene.add(grid);
 
@@ -496,60 +542,41 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
-const FLOAT_PANEL_TOP = 44;
-const FLOAT_PANEL_BOTTOM_GAP = 16;
-
-function getFloatingPanelHeight() {
-  return Math.max(360, window.innerHeight - FLOAT_PANEL_TOP - FLOAT_PANEL_BOTTOM_GAP);
+function showProgress(visible, pct = 0, label = "") {
+  if (!progressOverlay) return;
+  progressOverlay.classList.toggle("hidden", !visible);
+  if (progressLabel && label) progressLabel.textContent = label;
+  if (progressBar) progressBar.style.width = `${clampNumber(pct, 0, 100)}%`;
 }
 
-/** Keep Model / Base / Batch winboxes tall (viewport-filled) without inner scrollbars. */
-function syncFloatingWindowHeights() {
-  const h = getFloatingPanelHeight();
-  for (const wb of [modelWindow, baseWindow, batchWindow]) {
-    if (!wb) continue;
-    wb.height = h;
-    wb.resize();
+const INSPECTOR_TITLES = {
+  model: () => t("modelSection"),
+  base: () => t("baseSection"),
+  batch: () => t("batchSection"),
+  view: () => t("viewSection"),
+};
+
+function setInspectorPanel(panelId) {
+  activeInspectorPanel = panelId;
+  for (const panel of document.querySelectorAll(".inspector-panel")) {
+    const id = panel.id.replace("panel", "").toLowerCase();
+    panel.hidden = id !== panelId;
+    panel.classList.toggle("active", id === panelId);
   }
+  for (const btn of iconRail?.querySelectorAll(".rail-btn") || []) {
+    btn.classList.toggle("active", btn.dataset.panel === panelId);
+  }
+  if (inspectorTitleEl) inspectorTitleEl.textContent = INSPECTOR_TITLES[panelId]?.() ?? panelId;
 }
 
-function createFloatingWindows() {
-  if (typeof WinBox === "undefined" || !modelWindowContent || !baseWindowContent || !batchWindowContent) return;
-  const h = getFloatingPanelHeight();
-  modelWindow = new WinBox({
-    title: t("modelSection"),
-    class: "sg-window",
-    x: 276,
-    y: FLOAT_PANEL_TOP,
-    width: 236,
-    height: h,
-    mount: modelWindowContent,
+function initIconRail() {
+  iconRail?.querySelectorAll(".rail-btn[data-panel]").forEach((btn) => {
+    btn.addEventListener("click", () => setInspectorPanel(btn.dataset.panel));
   });
-  baseWindow = new WinBox({
-    title: t("baseSection"),
-    class: "sg-window",
-    x: 520,
-    y: FLOAT_PANEL_TOP,
-    width: 236,
-    height: h,
-    mount: baseWindowContent,
-  });
-  batchWindow = new WinBox({
-    title: t("batchSection"),
-    class: "sg-window",
-    x: 764,
-    y: FLOAT_PANEL_TOP,
-    width: 236,
-    height: h,
-    mount: batchWindowContent,
-  });
-  window.addEventListener("resize", syncFloatingWindowHeights);
 }
 
 function updateWindowTitles() {
-  if (modelWindow) modelWindow.setTitle(t("modelSection"));
-  if (baseWindow) baseWindow.setTitle(t("baseSection"));
-  if (batchWindow) batchWindow.setTitle(t("batchSection"));
+  if (inspectorTitleEl) inspectorTitleEl.textContent = INSPECTOR_TITLES[activeInspectorPanel]?.() ?? "";
 }
 
 function dlog(step, details = {}) {
@@ -810,11 +837,17 @@ async function loadLibraryManifest() {
 
 function applyLocale() {
   document.documentElement.lang = currentLang;
-  document.getElementById("title").textContent = t("title");
   document.getElementById("subtitle").textContent = t("subtitle");
-  document.getElementById("themeLabel").textContent = t("theme");
-  document.getElementById("langLabel").textContent = t("language");
-  document.getElementById("sidebarSideLabel").textContent = t("sidebarSide");
+  document.getElementById("sidebarSideLabel").textContent = t("inspectorSide");
+  document.getElementById("railModelLabel").textContent = t("modelSection");
+  document.getElementById("railBaseLabel").textContent = t("baseSection");
+  document.getElementById("railBatchLabel").textContent = t("batchSection");
+  document.getElementById("railViewLabel").textContent = t("viewSection");
+  if (forgeHint) forgeHint.textContent = t("forgeHint");
+  if (matcapModeInput?.nextElementSibling) matcapModeInput.nextElementSibling.textContent = t("matcapMode");
+  if (viewTopBtn) viewTopBtn.textContent = t("viewTop");
+  if (viewFrontBtn) viewFrontBtn.textContent = t("viewFront");
+  if (viewIsoBtn) viewIsoBtn.textContent = t("viewIso");
   document.getElementById("libraryCategoryLabel").textContent = t("libraryCategory");
   document.getElementById("libraryHoverDelayLabel").textContent = t("libraryHoverDelay");
   document.getElementById("librarySingleLabel").textContent = t("librarySingle");
@@ -826,10 +859,6 @@ function applyLocale() {
   document.getElementById("batchFitRatioLabel").textContent = t("batchFitRatio");
   document.getElementById("batchLiftLabel").textContent = t("batchLift");
   document.getElementById("batchInsetLabel").textContent = t("batchInset");
-  document.getElementById("modelSectionLabel").textContent = t("modelSection");
-  document.getElementById("baseSectionLabel").textContent = t("baseSection");
-  document.getElementById("batchSectionLabel").textContent = t("batchSection");
-  document.getElementById("viewSectionLabel").textContent = t("viewSection");
   document.getElementById("box1Label").textContent = t("box1");
   document.getElementById("box2Label").textContent = t("box2");
   document.getElementById("svgFileLabel").textContent = t("svgFile");
@@ -851,8 +880,19 @@ function applyLocale() {
   document.getElementById("baseTextureMarkSizeLabel").textContent = t("baseTextureMarkSize");
   document.getElementById("baseTextureStrengthLabel").textContent = t("baseTextureStrength");
   if (baseTexturePresetInput) {
-    const forgedOpt = baseTexturePresetInput.querySelector('option[value="forgedMetal"]');
-    if (forgedOpt) forgedOpt.textContent = t("baseTexturePresetForged");
+    const presetLabels = {
+      hammer: t("baseTexturePresetForged"),
+      forgedMetal: t("baseTexturePresetForged"),
+      rings: t("baseTexturePresetRings"),
+      knurl: t("baseTexturePresetKnurl"),
+      roll: t("baseTexturePresetRoll"),
+      pitting: t("baseTexturePresetPitting"),
+      sunburst: t("baseTexturePresetSunburst"),
+      hex: t("baseTexturePresetHex"),
+    };
+    for (const opt of baseTexturePresetInput.options) {
+      if (presetLabels[opt.value]) opt.textContent = presetLabels[opt.value];
+    }
   }
   if (baseTextureMarkShapeInput) {
     const shapeLabels = {
@@ -913,7 +953,7 @@ function applyLocale() {
 function applyTheme(theme) {
   const isLight = theme === "light";
   document.body.dataset.theme = isLight ? "light" : "dark";
-  scene.background = new THREE.Color(isLight ? 0xece8dd : 0x0b0c10);
+  scene.background = new THREE.Color(isLight ? 0xe8e0d0 : 0x12100e);
   scene.remove(grid);
   grid.geometry.dispose();
   if (Array.isArray(grid.material)) {
@@ -924,11 +964,29 @@ function applyTheme(theme) {
   grid = new THREE.GridHelper(
     400,
     40,
-    isLight ? 0xbdae8a : 0x3d444d,
-    isLight ? 0xd2c6a7 : 0x2d333b
+    isLight ? 0xc4b08a : 0x3d3428,
+    isLight ? 0xd8ccb0 : 0x2a241c
   );
   grid.rotateX(Math.PI / 2);
   scene.add(grid);
+}
+
+function setViewPreset(preset) {
+  isFlatView = false;
+  controls.enableRotate = true;
+  controls.target.set(0, 0, 0);
+  if (preset === "top") {
+    camera.up.set(0, 1, 0);
+    camera.position.set(0, 0, 220);
+  } else if (preset === "front") {
+    camera.up.set(0, 0, 1);
+    camera.position.set(0, -220, 0);
+  } else {
+    camera.up.set(0, 0, 1);
+    camera.position.set(120, -120, 80);
+  }
+  controls.update();
+  if (flatViewBtn) flatViewBtn.textContent = t("flatView");
 }
 
 function setFlatView(enabled) {
@@ -988,139 +1046,69 @@ function isBaseTextureActive() {
   return !!baseTextureEnabledInput?.checked;
 }
 
+function normalizeForgePreset(value) {
+  if (value === "forgedMetal") return "hammer";
+  return value || "hammer";
+}
+
 function getBaseTextureSettings() {
   return {
-    preset: baseTexturePresetInput?.value ?? "forgedMetal",
-    frequency: clampNumber(Number(baseTextureFrequencyInput?.value ?? 12), 2, 48),
+    preset: normalizeForgePreset(baseTexturePresetInput?.value ?? "hammer"),
+    frequency: clampNumber(Number(baseTextureFrequencyInput?.value ?? 10), 2, 48),
     markShape: baseTextureMarkShapeInput?.value ?? "circle",
-    markSize: clampNumber(Number(baseTextureMarkSizeInput?.value ?? 0.65), 0.15, 1.8),
-    strength: clampNumber(Number(baseTextureStrengthInput?.value ?? 0.75), 0.1, 1),
+    markSize: clampNumber(Number(baseTextureMarkSizeInput?.value ?? 0.75), 0.15, 1.8),
+    strength: clampNumber(Number(baseTextureStrengthInput?.value ?? 0.9), 0.1, 1),
+    topOnly: true,
   };
 }
 
-/** Deterministic pseudo-random in [0, 1) from integer cell coordinates. */
-function forgedCellRand(ix, iy, salt = 0) {
-  let h = (ix * 374761393 + iy * 668265263 + salt * 982451653) | 0;
-  h = (h ^ (h >>> 13)) | 0;
-  h = Math.imul(h, 1274126177);
-  h = (h ^ (h >>> 16)) >>> 0;
-  return h / 4294967296;
+function refreshForgeMarkShapeVisibility() {
+  if (!markShapeField) return;
+  markShapeField.hidden = getBaseTextureSettings().preset !== "hammer";
 }
 
-function forgeSmoothFalloff(t) {
-  const x = clampNumber(t, 0, 1);
-  return x * x * (3 - 2 * x);
-}
-
-function forgeEllipticalInfluence(lx, ly, rx, ry) {
-  const nx = lx / rx;
-  const ny = ly / ry;
-  const d = nx * nx + ny * ny;
-  if (d >= 1) return 0;
-  return forgeSmoothFalloff(1 - d);
-}
-
-function forgeMarkInfluenceAt(x, y, mark, cell, markShape, markSize) {
-  const dx = x - mark.cx;
-  const dy = y - mark.cy;
-  const cos = Math.cos(-mark.angle);
-  const sin = Math.sin(-mark.angle);
-  const lx = dx * cos - dy * sin;
-  const ly = dx * sin + dy * cos;
-  const baseR = cell * markSize * 0.42;
-  switch (markShape) {
-    case "oval":
-      return forgeEllipticalInfluence(lx, ly, baseR * 1.55, baseR * 0.55);
-    case "strike":
-      return forgeEllipticalInfluence(lx, ly, baseR * 1.85, baseR * 0.28);
-    case "cross":
-      return Math.max(
-        forgeEllipticalInfluence(lx, ly, baseR * 0.42, baseR * 1.35),
-        forgeEllipticalInfluence(ly, -lx, baseR * 0.42, baseR * 1.35)
-      );
-    case "circle":
-    default:
-      return forgeEllipticalInfluence(lx, ly, baseR, baseR);
+function ensureForgeBaseEnabled() {
+  if (baseTextureEnabledInput?.checked && !generateBaseInput.checked && !uploadedBaseSourceGeometry) {
+    generateBaseInput.checked = true;
   }
 }
 
-function generateForgeMarks(settings, box) {
-  const spanX = box.max.x - box.min.x;
-  const spanY = box.max.y - box.min.y;
-  const span = Math.max(spanX, spanY, 1);
-  const cell = span / settings.frequency;
-  const cxMid = (box.min.x + box.max.x) * 0.5;
-  const cyMid = (box.min.y + box.max.y) * 0.5;
-  const halfN = Math.ceil(settings.frequency / 2) + 1;
-  const marks = [];
-  for (let iy = -halfN; iy <= halfN; iy++) {
-    for (let ix = -halfN; ix <= halfN; ix++) {
-      if (forgedCellRand(ix, iy, 4) > 0.93) continue;
-      marks.push({
-        cx: cxMid + (ix + 0.5) * cell + (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.55,
-        cy: cyMid + (iy + 0.5) * cell + (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.55,
-        angle: forgedCellRand(ix, iy, 3) * Math.PI,
-      });
-    }
+function getMatcapTexture() {
+  if (!matcapTexture) {
+    matcapTexture = textureLoader.load(
+      "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/textures/matcaps/040full.jpg"
+    );
   }
-  return { marks, cell };
+  return matcapTexture;
 }
 
-function sampleForgeInfluenceAt(x, y, marks, settings, cell) {
-  let sum = 0;
-  for (const mark of marks) {
-    sum += forgeMarkInfluenceAt(x, y, mark, cell, settings.markShape, settings.markSize);
+function createBaseMaterial() {
+  if (matcapModeInput?.checked) {
+    return new THREE.MeshMatcapMaterial({
+      matcap: getMatcapTexture(),
+      color: 0xb8a898,
+    });
   }
-  const saturated = 1 - Math.exp(-2.8 * sum);
-  const grain = (forgedCellRand(Math.floor(x * 19), Math.floor(y * 19), 8) - 0.5) * 0.06;
-  return clampNumber(saturated + grain * settings.strength, 0, 1);
+  return new THREE.MeshStandardMaterial({
+    color: 0x9a9088,
+    metalness: 0.72,
+    roughness: 0.38,
+  });
 }
 
-/** Displace top-surface vertices inward to create real forged dents in the mesh. */
-function applyForgeDisplacement(geometry, settings, options = {}) {
-  geometry.computeBoundingBox();
-  const box = geometry.boundingBox;
-  const thickness = Math.max(box.max.z - box.min.z, 0.001);
-  const maxDepth = Math.min(thickness * 0.45 * settings.strength, thickness * 0.55);
-  if (maxDepth <= 0.001) return;
+function applyMeshPreviewFlags(mesh) {
+  if (!mesh) return;
+  mesh.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+  });
+}
 
-  const { marks, cell } = generateForgeMarks(settings, box);
-  if (!marks.length) return;
-
-  const diskMode = !!options.diskMode;
-  const diskRadius = options.diskRadius ?? Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5;
-  const pos = geometry.attributes.position;
-  geometry.computeVertexNormals();
-  const normals = geometry.attributes.normal;
-  const topZ = box.max.z;
-  const topEps = diskMode ? Math.max(thickness * 0.06, 0.04) : Math.max(thickness * 0.14, 0.06);
-
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    if (z < topZ - topEps) continue;
-
-    if (diskMode) {
-      if (Math.hypot(x, y) > diskRadius * 1.002) continue;
-    } else if (normals.getZ(i) < 0.35) {
-      continue;
-    }
-
-    const depth = sampleForgeInfluenceAt(x, y, marks, settings, cell) * maxDepth;
-    if (depth <= 0.0005) continue;
-
-    if (diskMode) {
-      pos.setZ(z - depth);
-    } else {
-      const nx = normals.getX(i);
-      const ny = normals.getY(i);
-      const nz = normals.getZ(i);
-      pos.setXYZ(i, x - nx * depth, y - ny * depth, z - nz * depth);
-    }
-  }
-  pos.needsUpdate = true;
-  geometry.computeVertexNormals();
+function refreshBaseTextureControlsVisibility() {
+  if (!baseTextureControls) return;
+  baseTextureControls.hidden = !isBaseTextureActive();
+  refreshForgeMarkShapeVisibility();
 }
 
 function prepareForgeBaseGeometry(sourceGeometry) {
@@ -1128,14 +1116,10 @@ function prepareForgeBaseGeometry(sourceGeometry) {
   if (isBaseTextureActive()) {
     geometry.computeBoundingBox();
     const box = geometry.boundingBox;
-    const spanX = box.max.x - box.min.x;
-    const spanY = box.max.y - box.min.y;
-    const roundFlatTop =
-      Math.abs(spanX - spanY) / Math.max(spanX, spanY, 1) < 0.12 &&
-      Math.max(spanX, spanY) / Math.max(box.max.z - box.min.z, 0.001) > 4;
+    const roundFlatTop = detectRoundFlatTop(box);
     applyForgeDisplacement(geometry, getBaseTextureSettings(), {
       diskMode: roundFlatTop,
-      diskRadius: Math.max(spanX, spanY) * 0.5,
+      diskRadius: Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5,
     });
   } else {
     geometry.computeVertexNormals();
@@ -1143,26 +1127,12 @@ function prepareForgeBaseGeometry(sourceGeometry) {
   return geometry;
 }
 
-function createBaseMaterial() {
-  return new THREE.MeshStandardMaterial({
-    color: 0x8b8b8b,
-    metalness: 0.35,
-    roughness: 0.68,
-  });
-}
-
-function refreshBaseTextureControlsVisibility() {
-  if (!baseTextureControls) return;
-  baseTextureControls.hidden = !isBaseTextureActive();
-}
-
 function makeGeneratedBaseMesh() {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
   const forgeOn = isBaseTextureActive();
-  const radialSeg = forgeOn ? 256 : 96;
+  const radialSeg = forgeOn ? 320 : 96;
   const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, radialSeg, 1);
-  // Z is up in this scene, keep top at Z=0.
   geometry.rotateX(Math.PI / 2);
   geometry.translate(0, 0, -thickness / 2);
   if (forgeOn) {
@@ -1173,7 +1143,9 @@ function makeGeneratedBaseMesh() {
   } else {
     geometry.computeVertexNormals();
   }
-  return new THREE.Mesh(geometry, createBaseMaterial());
+  const mesh = new THREE.Mesh(geometry, createBaseMaterial());
+  applyMeshPreviewFlags(mesh);
+  return mesh;
 }
 
 /** Dispose geometries/materials owned by Object3D (Mesh or Group). */
@@ -1265,6 +1237,7 @@ function buildComposableBaseRoot(options = {}) {
     const geom = prepareForgeBaseGeometry(uploadedBaseSourceGeometry);
     stl = new THREE.Mesh(geom, createBaseMaterial());
     stl.userData.role = "stlAddon";
+    applyMeshPreviewFlags(stl);
     const s = clampNumber(Number(stlAddonScaleInput.value ?? 1), 0.05, 5);
     stl.scale.set(s, s, s);
     stl.updateMatrixWorld(true);
@@ -1728,6 +1701,7 @@ function composePreview() {
     if (base) {
       currentBaseMesh = base;
       applyBaseOpaqueVisual(currentBaseMesh);
+      applyMeshPreviewFlags(currentBaseMesh);
       setWireframe(currentBaseMesh);
       scene.add(currentBaseMesh);
     }
@@ -1738,6 +1712,7 @@ function composePreview() {
 
   if (base) {
     currentBaseMesh = base;
+    applyMeshPreviewFlags(currentBaseMesh);
     placeEmblem(currentBaseMesh, currentMesh);
     setWireframe(currentBaseMesh);
     if (inverseModeInput.checked) {
@@ -1841,7 +1816,7 @@ function applyState(state) {
   currentLang = state.lang ?? currentLang;
   langSelect.value = currentLang;
   themeSelect.value = state.theme ?? "dark";
-  sidebarSideSelect.value = state.sidebarSide ?? "left";
+  sidebarSideSelect.value = state.sidebarSide ?? "right";
   sizeInput.value = state.size ?? sizeInput.value;
   thicknessInput.value = state.thickness ?? thicknessInput.value;
   scaleXInput.value = state.scaleX ?? scaleXInput.value;
@@ -1873,12 +1848,16 @@ function applyState(state) {
   baseThicknessInput.value = state.baseThickness ?? baseThicknessInput.value;
   fitInsetPctInput.value = state.fitInsetPct ?? fitInsetPctInput.value ?? "10";
   if (baseTextureEnabledInput) baseTextureEnabledInput.checked = !!state.baseTextureEnabled;
-  if (baseTexturePresetInput) baseTexturePresetInput.value = state.baseTexturePreset ?? "forgedMetal";
+  if (baseTexturePresetInput) {
+    const preset = state.baseTexturePreset ?? "hammer";
+    baseTexturePresetInput.value = preset === "forgedMetal" ? "hammer" : preset;
+  }
   if (baseTextureFrequencyInput) baseTextureFrequencyInput.value = state.baseTextureFrequency ?? "12";
   if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = state.baseTextureMarkShape ?? "circle";
   if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = state.baseTextureMarkSize ?? "0.65";
   if (baseTextureStrengthInput) baseTextureStrengthInput.value = state.baseTextureStrength ?? "0.75";
   refreshBaseTextureControlsVisibility();
+  refreshForgeMarkShapeVisibility();
   if ([state.emblemRotX, state.emblemRotY, state.emblemRotZ].every((v) => typeof v === "number") && Number.isFinite(state.emblemRotX)) {
     emblemGizmoEuler.set(state.emblemRotX, state.emblemRotY, state.emblemRotZ, "XYZ");
   }
@@ -1890,7 +1869,7 @@ function applyState(state) {
   svgText = state.svgText ?? svgText;
   svgName = state.svgName ?? svgName;
   applyTheme(themeSelect.value);
-  document.body.dataset.sidebar = sidebarSideSelect.value;
+  document.body.dataset.inspector = sidebarSideSelect.value;
   applyLocale();
   setFlatView(!!state.flatView);
   rebuild();
@@ -1944,11 +1923,11 @@ function resetSettingsToDefaults() {
   stlAddonOffsetZInput.value = "0";
   stlAddonScaleInput.value = "1";
   if (baseTextureEnabledInput) baseTextureEnabledInput.checked = false;
-  if (baseTexturePresetInput) baseTexturePresetInput.value = "forgedMetal";
-  if (baseTextureFrequencyInput) baseTextureFrequencyInput.value = "12";
+  if (baseTexturePresetInput) baseTexturePresetInput.value = "hammer";
+  if (baseTextureFrequencyInput) baseTextureFrequencyInput.value = "10";
   if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = "circle";
-  if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = "0.65";
-  if (baseTextureStrengthInput) baseTextureStrengthInput.value = "0.75";
+  if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = "0.75";
+  if (baseTextureStrengthInput) baseTextureStrengthInput.value = "0.9";
   refreshBaseTextureControlsVisibility();
   rebuild();
 }
@@ -2302,11 +2281,19 @@ for (const input of [sizeInput, thicknessInput, scaleXInput, scaleYInput, scaleZ
 for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, stlAddonOffsetXInput, stlAddonOffsetYInput, stlAddonOffsetZInput, stlAddonScaleInput, baseTextureEnabledInput, baseTexturePresetInput, baseTextureFrequencyInput, baseTextureMarkShapeInput, baseTextureMarkSizeInput, baseTextureStrengthInput]) {
   if (!input) continue;
   input.addEventListener("input", () => {
-    if (input === baseTextureEnabledInput) refreshBaseTextureControlsVisibility();
+    if (input === baseTextureEnabledInput) {
+      ensureForgeBaseEnabled();
+      refreshBaseTextureControlsVisibility();
+    }
+    if (input === baseTexturePresetInput) refreshForgeMarkShapeVisibility();
     rebuild();
   });
   input.addEventListener("change", () => {
-    if (input === baseTextureEnabledInput) refreshBaseTextureControlsVisibility();
+    if (input === baseTextureEnabledInput) {
+      ensureForgeBaseEnabled();
+      refreshBaseTextureControlsVisibility();
+    }
+    if (input === baseTexturePresetInput) refreshForgeMarkShapeVisibility();
     rebuild();
     commitHistory();
   });
@@ -2474,7 +2461,7 @@ stlAddonScaleValueInput.addEventListener("change", commitHistory);
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
 sidebarSideSelect.addEventListener("change", () => {
-  document.body.dataset.sidebar = sidebarSideSelect.value;
+  document.body.dataset.inspector = sidebarSideSelect.value;
   commitHistory();
 });
 langSelect.addEventListener("change", () => {
@@ -2618,8 +2605,11 @@ async function runBatchExport() {
   const failures = [];
 
   setStatus(`${t("statusBatch")}: ${batchFiles.length}\nProcessing...`);
+  showProgress(true, 0, `${t("statusBatch")}…`);
 
-  for (const file of batchFiles) {
+  for (let fi = 0; fi < batchFiles.length; fi++) {
+    const file = batchFiles[fi];
+    showProgress(true, (fi / batchFiles.length) * 100, `${file.name}…`);
     let activeCuttable = null;
     let stlAddonClone = null;
     let mesh = null;
@@ -2669,13 +2659,16 @@ async function runBatchExport() {
   }
 
   if (success === 0) {
+    showProgress(false);
     setStatus(
       [`${t("statusError")}: no files were converted`, ...failures.slice(0, 5)].join("\n")
     );
     return;
   }
 
+  showProgress(true, 100, "ZIP…");
   const blob = await zip.generateAsync({ type: "blob" });
+  showProgress(false);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -2785,6 +2778,29 @@ flatViewBtn.addEventListener("click", () => {
   commitHistory();
 });
 
+viewTopBtn?.addEventListener("click", () => setViewPreset("top"));
+viewFrontBtn?.addEventListener("click", () => setViewPreset("front"));
+viewIsoBtn?.addEventListener("click", () => setViewPreset("iso"));
+
+matcapModeInput?.addEventListener("change", () => {
+  rebuild();
+  commitHistory();
+});
+
+viewport.addEventListener("dragover", (e) => {
+  e.preventDefault();
+});
+viewport.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer?.files?.[0];
+  if (!file || !/\.svg$/i.test(file.name)) return;
+  svgName = file.name.replace(/\.svg$/i, "");
+  svgText = await file.text();
+  setInspectorPanel("model");
+  rebuild();
+  commitHistory();
+});
+
 fitBaseToEmblemBtn.addEventListener("click", () => {
   if (!currentMesh) return;
   const box = new THREE.Box3().setFromObject(currentMesh);
@@ -2881,10 +2897,12 @@ animate();
 
 refreshOutputs();
 applyTheme("dark");
-document.body.dataset.sidebar = "left";
+document.body.dataset.inspector = "right";
+sidebarSideSelect.value = "right";
 setGizmoMode("translate");
 gizmoEnabledInput.checked = true;
-createFloatingWindows();
+initIconRail();
+setInspectorPanel("model");
 applyLocale();
 loadLibraryManifest();
 loadFromCache();
