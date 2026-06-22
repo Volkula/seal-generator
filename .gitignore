@@ -1,4 +1,7 @@
 *.stl
+!stls/
+!stls/**
+!stls/**/*.stl
 desktop.ini
 __pycache__/
 node_modules/

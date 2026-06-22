@@ -221,7 +221,16 @@
               </div>
             </div>
             <label class="field">
-              <span id="baseStlLabel">Extra base STL (add-on)</span>
+              <span id="stlLibraryLabel">Library STL (add-on)</span>
+              <select id="stlLibrarySelect"></select>
+            </label>
+            <div class="row-buttons stl-library-actions">
+              <button id="stlLibraryBrowseBtn" type="button" class="ghost">Browse STL library</button>
+              <button id="stlLibraryLoadBtn" type="button" class="ghost">Use selected STL</button>
+            </div>
+            <p id="baseStlSelectedName" class="stl-selected-name">No add-on STL selected</p>
+            <label class="field">
+              <span id="baseStlUploadLabel">Or upload STL file</span>
               <div class="range-row">
                 <input id="baseStlFile" type="file" accept=".stl,model/stl" />
                 <button id="baseStlClearBtn" type="button" class="ghost" disabled>Remove STL</button>
@@ -447,6 +456,32 @@
         <div class="row-buttons modal-actions">
           <button id="libraryPreviewPrimaryBtn" type="button">Load selected</button>
           <button id="libraryPreviewCancelBtn" class="danger" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="stlLibraryModal" class="modal hidden">
+      <div class="modal-card modal-card-wide">
+        <div class="modal-head">
+          <strong id="stlLibraryTitle">STL Library</strong>
+          <button id="stlLibraryCloseBtn" class="modal-close" type="button">×</button>
+        </div>
+        <div class="stl-library-browser">
+          <div id="stlLibraryPreview" class="stl-library-preview" aria-label="STL preview"></div>
+          <p id="stlLibraryPreviewName" class="stl-library-preview-name">—</p>
+          <div class="library-browser">
+            <aside class="library-sidebar">
+              <p class="hint" id="stlLibraryMeta">Category</p>
+              <div id="stlLibraryCategoryList" class="library-category-list"></div>
+            </aside>
+            <section class="library-grid-wrap">
+              <div id="stlLibraryGrid" class="library-grid"></div>
+            </section>
+          </div>
+        </div>
+        <div class="row-buttons modal-actions">
+          <button id="stlLibraryPrimaryBtn" type="button">Use selected STL</button>
+          <button id="stlLibraryCancelBtn" class="danger" type="button">Cancel</button>
         </div>
       </div>
     </div>

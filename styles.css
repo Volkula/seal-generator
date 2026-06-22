@@ -675,6 +675,65 @@ button.danger {
   margin-top: 10px;
 }
 
+.modal-card-wide {
+  max-width: min(920px, 96vw);
+}
+
+.stl-library-actions {
+  margin-bottom: 4px;
+}
+
+.stl-library-actions button {
+  margin-top: 0;
+}
+
+.stl-selected-name {
+  margin: 0 0 8px;
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.stl-library-browser {
+  display: grid;
+  gap: 8px;
+}
+
+.stl-library-preview {
+  height: 220px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: radial-gradient(circle at 50% 35%, #2a2622, #0f0d0b 70%);
+  overflow: hidden;
+}
+
+.stl-library-preview canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stl-library-preview-name {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.library-card.stl-card .library-thumb {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.library-card.stl-card.active {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 1px #3ecf8e55;
+}
+
 @media (max-width: 960px) {
   :root {
     --sidebar-w: 280px;

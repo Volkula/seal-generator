@@ -13,6 +13,20 @@ const viewport = document.getElementById("viewport");
 const fileInput = document.getElementById("svgFile");
 const baseStlFileInput = document.getElementById("baseStlFile");
 const baseStlClearBtn = document.getElementById("baseStlClearBtn");
+const stlLibrarySelect = document.getElementById("stlLibrarySelect");
+const stlLibraryBrowseBtn = document.getElementById("stlLibraryBrowseBtn");
+const stlLibraryLoadBtn = document.getElementById("stlLibraryLoadBtn");
+const baseStlSelectedName = document.getElementById("baseStlSelectedName");
+const stlLibraryModal = document.getElementById("stlLibraryModal");
+const stlLibraryTitle = document.getElementById("stlLibraryTitle");
+const stlLibraryMeta = document.getElementById("stlLibraryMeta");
+const stlLibraryCategoryList = document.getElementById("stlLibraryCategoryList");
+const stlLibraryGrid = document.getElementById("stlLibraryGrid");
+const stlLibraryPreview = document.getElementById("stlLibraryPreview");
+const stlLibraryPreviewName = document.getElementById("stlLibraryPreviewName");
+const stlLibraryPrimaryBtn = document.getElementById("stlLibraryPrimaryBtn");
+const stlLibraryCancelBtn = document.getElementById("stlLibraryCancelBtn");
+const stlLibraryCloseBtn = document.getElementById("stlLibraryCloseBtn");
 const generateBaseInput = document.getElementById("generateBase");
 const baseDiameterInput = document.getElementById("baseDiameter");
 const baseDiameterValueInput = document.getElementById("baseDiameterValue");
@@ -138,6 +152,20 @@ let currentMesh = null;
 let currentBaseMesh = null;
 let currentInversePreviewMesh = null;
 let uploadedBaseSourceGeometry = null;
+/** Path in `./stls/` when add-on came from the built-in library; empty for file upload. */
+let baseStlLibraryPath = "";
+let baseStlSourceName = "";
+let stlLibraryManifest = [];
+let stlLibraryBrowserCategory = "";
+let stlLibraryBrowserSelectedPath = "";
+const stlPreviewState = {
+  renderer: null,
+  scene: null,
+  camera: null,
+  mesh: null,
+  animId: 0,
+  lights: [],
+};
 let currentLang = "en";
 let uploadedFiles = [];
 let batchFiles = [];
@@ -205,9 +233,19 @@ const i18n = {
     batchClearSelection: "Clear selected",
     svgFile: "SVG file",
     baseStl: "Extra STL (under disk)",
+    baseStlUpload: "Or upload STL file",
     baseStlClear: "Remove STL",
     baseStlHint:
       "Stacked below the disk when both are enabled. If disk is off, only the STL defines the base.",
+    stlLibrary: "Library STL (add-on)",
+    stlLibraryBrowse: "Browse STL library",
+    stlLibraryLoad: "Use selected STL",
+    stlLibraryTitle: "STL Library",
+    stlLibraryCategory: "Category",
+    stlLibraryUseSelected: "Use selected STL",
+    baseStlSelected: "Selected add-on",
+    baseStlNone: "No add-on STL selected",
+    baseStlCustom: "Custom upload",
     generateBase: "Generate round disk base",
     stlAddonOffsetX: "Add-on STL offset X (mm)",
     stlAddonOffsetY: "Add-on STL offset Y (mm)",
@@ -328,9 +366,19 @@ const i18n = {
     batchClearSelection: "Очистить выбранные",
     svgFile: "SVG файл",
     baseStl: "Доп. STL (под диск)",
+    baseStlUpload: "Или загрузить STL файл",
     baseStlClear: "Убрать STL",
     baseStlHint:
       "Под диском, если включены оба; если диск выключен — только STL как база.",
+    stlLibrary: "STL из библиотеки (доп.)",
+    stlLibraryBrowse: "Открыть библиотеку STL",
+    stlLibraryLoad: "Использовать выбранный",
+    stlLibraryTitle: "Библиотека STL",
+    stlLibraryCategory: "Категория",
+    stlLibraryUseSelected: "Использовать выбранный",
+    baseStlSelected: "Выбранный доп. STL",
+    baseStlNone: "Доп. STL не выбран",
+    baseStlCustom: "Свой файл",
     generateBase: "Круглый диск (основа)",
     stlAddonOffsetX: "Смещение STL доп. X (мм)",
     stlAddonOffsetY: "Смещение STL доп. Y (мм)",
@@ -842,6 +890,264 @@ async function loadLibraryManifest() {
   } catch (_err) {}
 }
 
+function libraryAssetUrl(path) {
+  if (!path) return path;
+  const parts = path.replace(/^\.\//, "").split("/");
+  return `./${parts.map(encodeURIComponent).join("/")}`;
+}
+
+function updateStlLibrarySelect() {
+  if (!stlLibrarySelect) return;
+  const prev = stlLibrarySelect.value || baseStlLibraryPath;
+  stlLibrarySelect.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = currentLang === "ru" ? "— не выбрано —" : "— none —";
+  stlLibrarySelect.appendChild(empty);
+  for (const item of stlLibraryManifest) {
+    const opt = document.createElement("option");
+    opt.value = item.path;
+    opt.textContent = `${item.name} (${item.category})`;
+    stlLibrarySelect.appendChild(opt);
+  }
+  if (prev && stlLibraryManifest.some((x) => x.path === prev)) {
+    stlLibrarySelect.value = prev;
+  }
+}
+
+async function loadStlLibraryManifest() {
+  try {
+    const response = await fetch("./stls/library-manifest.json");
+    if (!response.ok) return;
+    const data = await response.json();
+    if (!Array.isArray(data)) return;
+    stlLibraryManifest = data;
+    updateStlLibrarySelect();
+  } catch (_err) {}
+}
+
+function updateBaseStlSelectionUI() {
+  if (baseStlSelectedName) {
+    baseStlSelectedName.textContent = uploadedBaseSourceGeometry
+      ? `${t("baseStlSelected")}: ${baseStlSourceName || t("baseStlCustom")}`
+      : t("baseStlNone");
+  }
+  if (stlLibrarySelect && baseStlLibraryPath) {
+    stlLibrarySelect.value = baseStlLibraryPath;
+  }
+  if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseSourceGeometry;
+}
+
+function normalizeBaseStlGeometry(geometry) {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  geometry.translate(-center.x, -center.y, -box.max.z);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function clearBaseStlAddon() {
+  uploadedBaseSourceGeometry?.dispose?.();
+  uploadedBaseSourceGeometry = null;
+  baseStlLibraryPath = "";
+  baseStlSourceName = "";
+  if (baseStlFileInput) baseStlFileInput.value = "";
+  if (stlLibrarySelect) stlLibrarySelect.value = "";
+  if (baseStlClearBtn) baseStlClearBtn.disabled = true;
+  updateBaseStlSelectionUI();
+}
+
+function setBaseStlGeometry(geometry, meta = {}) {
+  uploadedBaseSourceGeometry?.dispose?.();
+  uploadedBaseSourceGeometry = geometry;
+  baseStlLibraryPath = meta.libraryPath ?? "";
+  baseStlSourceName = meta.name ?? "";
+  if (baseStlClearBtn) baseStlClearBtn.disabled = false;
+  if (stlLibrarySelect && baseStlLibraryPath) stlLibrarySelect.value = baseStlLibraryPath;
+  updateBaseStlSelectionUI();
+}
+
+async function loadBaseStlFromBuffer(buffer, meta = {}) {
+  const loader = new STLLoader();
+  const geometry = normalizeBaseStlGeometry(loader.parse(buffer));
+  setBaseStlGeometry(geometry, meta);
+  rebuild();
+}
+
+async function loadBaseStlFromLibrary(path, options = {}) {
+  if (!path) return;
+  const item = stlLibraryManifest.find((x) => x.path === path);
+  const response = await fetch(libraryAssetUrl(path));
+  if (!response.ok) throw new Error("Failed to load library STL");
+  await loadBaseStlFromBuffer(await response.arrayBuffer(), {
+    libraryPath: path,
+    name: item?.name ?? path.split("/").pop()?.replace(/\.stl$/i, "") ?? path,
+  });
+  if (!options.silent) commitHistory();
+}
+
+function stopStlPreviewAnimation() {
+  if (stlPreviewState.animId) {
+    cancelAnimationFrame(stlPreviewState.animId);
+    stlPreviewState.animId = 0;
+  }
+}
+
+function disposeStlPreviewMesh() {
+  if (stlPreviewState.mesh) {
+    stlPreviewState.scene?.remove(stlPreviewState.mesh);
+    stlPreviewState.mesh.geometry?.dispose?.();
+    stlPreviewState.mesh.material?.dispose?.();
+    stlPreviewState.mesh = null;
+  }
+}
+
+function ensureStlPreview() {
+  if (!stlLibraryPreview || stlPreviewState.renderer) return;
+  const width = Math.max(stlLibraryPreview.clientWidth, 320);
+  const height = Math.max(stlLibraryPreview.clientHeight, 220);
+  stlPreviewState.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  stlPreviewState.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  stlPreviewState.renderer.setSize(width, height);
+  stlLibraryPreview.appendChild(stlPreviewState.renderer.domElement);
+  stlPreviewState.scene = new THREE.Scene();
+  stlPreviewState.camera = new THREE.PerspectiveCamera(42, width / height, 0.01, 5000);
+  const key = new THREE.DirectionalLight(0xfff2dd, 1.15);
+  key.position.set(2, 3, 4);
+  const fill = new THREE.DirectionalLight(0x8899cc, 0.45);
+  fill.position.set(-3, 1, -2);
+  const amb = new THREE.AmbientLight(0x404040, 0.85);
+  stlPreviewState.scene.add(key, fill, amb);
+  stlPreviewState.lights = [key, fill, amb];
+}
+
+function resizeStlPreview() {
+  if (!stlPreviewState.renderer || !stlLibraryPreview) return;
+  const width = Math.max(stlLibraryPreview.clientWidth, 320);
+  const height = Math.max(stlLibraryPreview.clientHeight, 220);
+  stlPreviewState.renderer.setSize(width, height);
+  stlPreviewState.camera.aspect = width / height;
+  stlPreviewState.camera.updateProjectionMatrix();
+}
+
+function renderStlPreviewFrame() {
+  if (!stlPreviewState.renderer) return;
+  if (stlPreviewState.mesh) stlPreviewState.mesh.rotation.z += 0.01;
+  stlPreviewState.renderer.render(stlPreviewState.scene, stlPreviewState.camera);
+}
+
+function startStlPreviewAnimation() {
+  stopStlPreviewAnimation();
+  const tick = () => {
+    stlPreviewState.animId = requestAnimationFrame(tick);
+    renderStlPreviewFrame();
+  };
+  tick();
+}
+
+async function previewStlLibraryItem(path) {
+  if (!path) {
+    disposeStlPreviewMesh();
+    if (stlLibraryPreviewName) stlLibraryPreviewName.textContent = "—";
+    renderStlPreviewFrame();
+    return;
+  }
+  ensureStlPreview();
+  resizeStlPreview();
+  const item = stlLibraryManifest.find((x) => x.path === path);
+  if (stlLibraryPreviewName) {
+    stlLibraryPreviewName.textContent = item ? `${item.name} · ${item.category}` : path;
+  }
+  try {
+    const response = await fetch(libraryAssetUrl(path));
+    if (!response.ok) throw new Error("preview fetch failed");
+    const loader = new STLLoader();
+    const geometry = loader.parse(await response.arrayBuffer());
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    geometry.translate(-center.x, -center.y, -center.z);
+    disposeStlPreviewMesh();
+    stlPreviewState.mesh = new THREE.Mesh(
+      geometry,
+      new THREE.MeshStandardMaterial({ color: 0xb0a89c, metalness: 0.55, roughness: 0.42 })
+    );
+    stlPreviewState.scene.add(stlPreviewState.mesh);
+    const maxDim = Math.max(size.x, size.y, size.z, 1);
+    stlPreviewState.camera.position.set(maxDim * 1.35, maxDim * 0.95, maxDim * 1.35);
+    stlPreviewState.camera.lookAt(0, 0, 0);
+    startStlPreviewAnimation();
+  } catch (_err) {
+    disposeStlPreviewMesh();
+    if (stlLibraryPreviewName) stlLibraryPreviewName.textContent = t("statusError");
+  }
+}
+
+function renderStlLibraryBrowser() {
+  if (!stlLibraryGrid) return;
+  const categories = [...new Set(stlLibraryManifest.map((item) => item.category))].sort((a, b) => a.localeCompare(b));
+  if (!stlLibraryBrowserCategory && categories.length) stlLibraryBrowserCategory = categories[0];
+  if (stlLibraryMeta) stlLibraryMeta.textContent = t("stlLibraryCategory");
+  if (stlLibraryCategoryList) {
+    stlLibraryCategoryList.innerHTML = "";
+    for (const category of categories) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `library-cat-btn${category === stlLibraryBrowserCategory ? " active" : ""}`;
+      btn.textContent = category;
+      btn.addEventListener("click", () => {
+        stlLibraryBrowserCategory = category;
+        renderStlLibraryBrowser();
+      });
+      stlLibraryCategoryList.appendChild(btn);
+    }
+  }
+  const filtered = stlLibraryManifest.filter((x) => x.category === stlLibraryBrowserCategory);
+  stlLibraryGrid.innerHTML = "";
+  for (const item of filtered) {
+    const isActive = stlLibraryBrowserSelectedPath === item.path;
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `library-card stl-card${isActive ? " active" : ""}`;
+    card.innerHTML = `
+      <div class="library-thumb">STL</div>
+      <div class="library-name">${item.name}</div>
+    `;
+    card.addEventListener("click", () => {
+      stlLibraryBrowserSelectedPath = item.path;
+      renderStlLibraryBrowser();
+      previewStlLibraryItem(item.path);
+    });
+    stlLibraryGrid.appendChild(card);
+  }
+}
+
+function openStlLibraryModal() {
+  stlLibraryBrowserSelectedPath = stlLibrarySelect?.value || baseStlLibraryPath || stlLibraryBrowserSelectedPath;
+  stlLibraryBrowserCategory =
+    stlLibraryManifest.find((x) => x.path === stlLibraryBrowserSelectedPath)?.category ||
+    stlLibraryBrowserCategory ||
+    stlLibraryManifest[0]?.category ||
+    "";
+  if (stlLibraryTitle) stlLibraryTitle.textContent = t("stlLibraryTitle");
+  if (stlLibraryPrimaryBtn) stlLibraryPrimaryBtn.textContent = t("stlLibraryUseSelected");
+  if (stlLibraryCancelBtn) stlLibraryCancelBtn.textContent = t("cancel");
+  renderStlLibraryBrowser();
+  previewStlLibraryItem(stlLibraryBrowserSelectedPath);
+  stlLibraryModal?.classList.remove("hidden");
+  requestAnimationFrame(resizeStlPreview);
+}
+
+function closeStlLibraryModal() {
+  stlLibraryModal?.classList.add("hidden");
+  stopStlPreviewAnimation();
+}
+
 function applyLocale() {
   document.documentElement.lang = currentLang;
   document.getElementById("subtitle").textContent = t("subtitle");
@@ -869,8 +1175,15 @@ function applyLocale() {
   document.getElementById("box2Label").textContent = t("box2");
   document.getElementById("svgFileLabel").textContent = t("svgFile");
   document.getElementById("batchSvgLabel").textContent = t("batchSvg");
-  document.getElementById("baseStlLabel").textContent = t("baseStl");
   document.getElementById("baseStlHint").textContent = t("baseStlHint");
+  if (baseStlSelectedName) updateBaseStlSelectionUI();
+  document.getElementById("stlLibraryLabel").textContent = t("stlLibrary");
+  document.getElementById("baseStlUploadLabel").textContent = t("baseStlUpload");
+  if (stlLibraryBrowseBtn) stlLibraryBrowseBtn.textContent = t("stlLibraryBrowse");
+  if (stlLibraryLoadBtn) stlLibraryLoadBtn.textContent = t("stlLibraryLoad");
+  if (stlLibraryTitle) stlLibraryTitle.textContent = t("stlLibraryTitle");
+  if (stlLibraryPrimaryBtn) stlLibraryPrimaryBtn.textContent = t("stlLibraryUseSelected");
+  if (stlLibraryCancelBtn) stlLibraryCancelBtn.textContent = t("cancel");
   if (baseStlClearBtn) baseStlClearBtn.textContent = t("baseStlClear");
   document.getElementById("stlAddonOffsetXLabel").textContent = t("stlAddonOffsetX");
   document.getElementById("stlAddonOffsetYLabel").textContent = t("stlAddonOffsetY");
@@ -1868,6 +2181,7 @@ function captureState() {
     baseTextureStrength: baseTextureStrengthInput?.value ?? "0.75",
     baseTextureReverse: baseTextureReverseInput?.checked ?? false,
     baseTextureRandomness: baseTextureRandomnessInput?.value ?? "0.35",
+    baseStlLibraryPath,
     emblemRotX: emblemGizmoEuler.x,
     emblemRotY: emblemGizmoEuler.y,
     emblemRotZ: emblemGizmoEuler.z,
@@ -1926,6 +2240,14 @@ function applyState(state) {
   if (baseTextureStrengthInput) baseTextureStrengthInput.value = state.baseTextureStrength ?? "0.75";
   if (baseTextureReverseInput) baseTextureReverseInput.checked = !!state.baseTextureReverse;
   if (baseTextureRandomnessInput) baseTextureRandomnessInput.value = state.baseTextureRandomness ?? "0.35";
+  const libPath = state.baseStlLibraryPath ?? "";
+  if (libPath && libPath !== baseStlLibraryPath) {
+    loadBaseStlFromLibrary(libPath, { silent: true }).catch(() => clearBaseStlAddon());
+  } else if (!libPath && baseStlLibraryPath) {
+    clearBaseStlAddon();
+  } else {
+    updateBaseStlSelectionUI();
+  }
   ensureForgeBaseEnabled();
   refreshBaseTextureControlsVisibility();
   refreshForgeMarkShapeVisibility();
@@ -2000,6 +2322,7 @@ function resetSettingsToDefaults() {
   if (baseTextureStrengthInput) baseTextureStrengthInput.value = "0.9";
   if (baseTextureReverseInput) baseTextureReverseInput.checked = false;
   if (baseTextureRandomnessInput) baseTextureRandomnessInput.value = "0.35";
+  clearBaseStlAddon();
   refreshBaseTextureControlsVisibility();
   rebuild();
 }
@@ -2204,6 +2527,7 @@ function refreshOutputs() {
   if (baseTextureRandomnessValueInput) baseTextureRandomnessValueInput.value = `${Number(baseTextureRandomnessInput.value).toFixed(2)}`;
   refreshBaseTextureControlsVisibility();
   if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseSourceGeometry;
+  updateBaseStlSelectionUI();
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
 
@@ -2305,41 +2629,64 @@ fileInput.addEventListener("change", async (e) => {
 baseStlFileInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) {
-    uploadedBaseSourceGeometry?.dispose?.();
-    uploadedBaseSourceGeometry = null;
-    if (baseStlClearBtn) baseStlClearBtn.disabled = true;
+    clearBaseStlAddon();
     composePreview();
     rebuild();
     return;
   }
 
-  const loader = new STLLoader();
-  const buffer = await file.arrayBuffer();
-  const geometry = loader.parse(buffer);
-  geometry.computeBoundingBox();
-  const box = geometry.boundingBox;
-  const center = new THREE.Vector3();
-  box.getCenter(center);
-  // Keep uploaded base top face at Z=0.
-  geometry.translate(-center.x, -center.y, -box.max.z);
-  geometry.computeVertexNormals();
-
-  uploadedBaseSourceGeometry?.dispose?.();
-  uploadedBaseSourceGeometry = geometry;
-  if (baseStlClearBtn) baseStlClearBtn.disabled = false;
-  rebuild();
+  await loadBaseStlFromBuffer(await file.arrayBuffer(), {
+    libraryPath: "",
+    name: file.name.replace(/\.stl$/i, ""),
+  });
   commitHistory();
 });
 
 if (baseStlClearBtn) {
   baseStlClearBtn.addEventListener("click", () => {
-    uploadedBaseSourceGeometry?.dispose?.();
-    uploadedBaseSourceGeometry = null;
-    if (baseStlFileInput) baseStlFileInput.value = "";
-    baseStlClearBtn.disabled = true;
+    clearBaseStlAddon();
     composePreview();
     rebuild();
     commitHistory();
+  });
+}
+
+if (stlLibraryLoadBtn) {
+  stlLibraryLoadBtn.addEventListener("click", async () => {
+    const path = stlLibrarySelect?.value;
+    if (!path) return;
+    try {
+      await loadBaseStlFromLibrary(path);
+    } catch (_err) {
+      setStatus(`${t("statusError")}: STL library load failed`);
+    }
+  });
+}
+
+if (stlLibraryBrowseBtn) {
+  stlLibraryBrowseBtn.addEventListener("click", () => openStlLibraryModal());
+}
+
+if (stlLibraryPrimaryBtn) {
+  stlLibraryPrimaryBtn.addEventListener("click", async () => {
+    if (!stlLibraryBrowserSelectedPath) return;
+    try {
+      await loadBaseStlFromLibrary(stlLibraryBrowserSelectedPath);
+      if (stlLibrarySelect) stlLibrarySelect.value = stlLibraryBrowserSelectedPath;
+      closeStlLibraryModal();
+    } catch (_err) {
+      setStatus(`${t("statusError")}: STL library load failed`);
+    }
+  });
+}
+
+for (const btn of [stlLibraryCancelBtn, stlLibraryCloseBtn]) {
+  btn?.addEventListener("click", () => closeStlLibraryModal());
+}
+
+if (stlLibrarySelect) {
+  stlLibrarySelect.addEventListener("change", () => {
+    if (stlLibrarySelect.value) stlLibraryBrowserSelectedPath = stlLibrarySelect.value;
   });
 }
 
@@ -2833,7 +3180,7 @@ libraryPreviewPrimaryBtn.addEventListener("click", async () => {
   const added = [];
   for (const path of selectedPaths) {
     try {
-      const response = await fetch(path);
+      const response = await fetch(libraryAssetUrl(path));
       if (!response.ok) continue;
       const text = await response.text();
       const name = path.split("/").pop();
@@ -2990,6 +3337,8 @@ initIconRail();
 setInspectorPanel("model");
 applyLocale();
 loadLibraryManifest();
+loadStlLibraryManifest();
 loadFromCache();
+updateBaseStlSelectionUI();
 updateBatchButtonState();
 commitHistory();
