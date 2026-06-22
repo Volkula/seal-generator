@@ -1045,19 +1045,20 @@ function forgeMarkInfluenceAt(x, y, mark, cell, markShape, markSize) {
 }
 
 function generateForgeMarks(settings, box) {
-  const span = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, 1);
+  const spanX = box.max.x - box.min.x;
+  const spanY = box.max.y - box.min.y;
+  const span = Math.max(spanX, spanY, 1);
   const cell = span / settings.frequency;
+  const cxMid = (box.min.x + box.max.x) * 0.5;
+  const cyMid = (box.min.y + box.max.y) * 0.5;
+  const halfN = Math.ceil(settings.frequency / 2) + 1;
   const marks = [];
-  const ix0 = Math.floor((box.min.x - cell * 0.5) / cell);
-  const ix1 = Math.ceil((box.max.x + cell * 0.5) / cell);
-  const iy0 = Math.floor((box.min.y - cell * 0.5) / cell);
-  const iy1 = Math.ceil((box.max.y + cell * 0.5) / cell);
-  for (let iy = iy0; iy <= iy1; iy++) {
-    for (let ix = ix0; ix <= ix1; ix++) {
+  for (let iy = -halfN; iy <= halfN; iy++) {
+    for (let ix = -halfN; ix <= halfN; ix++) {
       if (forgedCellRand(ix, iy, 4) > 0.93) continue;
       marks.push({
-        cx: ix * cell + cell * 0.5 + (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.55,
-        cy: iy * cell + cell * 0.5 + (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.55,
+        cx: cxMid + (ix + 0.5) * cell + (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.55,
+        cy: cyMid + (iy + 0.5) * cell + (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.55,
         angle: forgedCellRand(ix, iy, 3) * Math.PI,
       });
     }
@@ -1066,44 +1067,57 @@ function generateForgeMarks(settings, box) {
 }
 
 function sampleForgeInfluenceAt(x, y, marks, settings, cell) {
-  let peak = 0;
+  let sum = 0;
   for (const mark of marks) {
-    peak = Math.max(peak, forgeMarkInfluenceAt(x, y, mark, cell, settings.markShape, settings.markSize));
+    sum += forgeMarkInfluenceAt(x, y, mark, cell, settings.markShape, settings.markSize);
   }
+  const saturated = 1 - Math.exp(-2.8 * sum);
   const grain = (forgedCellRand(Math.floor(x * 19), Math.floor(y * 19), 8) - 0.5) * 0.06;
-  return clampNumber(peak + grain * settings.strength, 0, 1);
+  return clampNumber(saturated + grain * settings.strength, 0, 1);
 }
 
-/** Displace upward-facing vertices inward to create real forged dents in the mesh. */
-function applyForgeDisplacement(geometry, settings) {
+/** Displace top-surface vertices inward to create real forged dents in the mesh. */
+function applyForgeDisplacement(geometry, settings, options = {}) {
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   const thickness = Math.max(box.max.z - box.min.z, 0.001);
-  const maxDepth = Math.min(thickness * 0.38 * settings.strength, thickness * 0.48);
+  const maxDepth = Math.min(thickness * 0.45 * settings.strength, thickness * 0.55);
   if (maxDepth <= 0.001) return;
 
   const { marks, cell } = generateForgeMarks(settings, box);
   if (!marks.length) return;
 
+  const diskMode = !!options.diskMode;
+  const diskRadius = options.diskRadius ?? Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5;
   const pos = geometry.attributes.position;
   geometry.computeVertexNormals();
   const normals = geometry.attributes.normal;
   const topZ = box.max.z;
-  const topBand = Math.max(thickness * 0.14, 0.06);
+  const topEps = diskMode ? Math.max(thickness * 0.06, 0.04) : Math.max(thickness * 0.14, 0.06);
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    const nz = normals.getZ(i);
-    if (z < topZ - topBand || nz < 0.35) continue;
+    if (z < topZ - topEps) continue;
+
+    if (diskMode) {
+      if (Math.hypot(x, y) > diskRadius * 1.002) continue;
+    } else if (normals.getZ(i) < 0.35) {
+      continue;
+    }
 
     const depth = sampleForgeInfluenceAt(x, y, marks, settings, cell) * maxDepth;
     if (depth <= 0.0005) continue;
 
-    const nx = normals.getX(i);
-    const ny = normals.getY(i);
-    pos.setXYZ(i, x - nx * depth, y - ny * depth, z - nz * depth);
+    if (diskMode) {
+      pos.setZ(z - depth);
+    } else {
+      const nx = normals.getX(i);
+      const ny = normals.getY(i);
+      const nz = normals.getZ(i);
+      pos.setXYZ(i, x - nx * depth, y - ny * depth, z - nz * depth);
+    }
   }
   pos.needsUpdate = true;
   geometry.computeVertexNormals();
@@ -1112,7 +1126,17 @@ function applyForgeDisplacement(geometry, settings) {
 function prepareForgeBaseGeometry(sourceGeometry) {
   const geometry = sourceGeometry.clone();
   if (isBaseTextureActive()) {
-    applyForgeDisplacement(geometry, getBaseTextureSettings());
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    const spanX = box.max.x - box.min.x;
+    const spanY = box.max.y - box.min.y;
+    const roundFlatTop =
+      Math.abs(spanX - spanY) / Math.max(spanX, spanY, 1) < 0.12 &&
+      Math.max(spanX, spanY) / Math.max(box.max.z - box.min.z, 0.001) > 4;
+    applyForgeDisplacement(geometry, getBaseTextureSettings(), {
+      diskMode: roundFlatTop,
+      diskRadius: Math.max(spanX, spanY) * 0.5,
+    });
   } else {
     geometry.computeVertexNormals();
   }
@@ -1135,12 +1159,17 @@ function refreshBaseTextureControlsVisibility() {
 function makeGeneratedBaseMesh() {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
-  const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, 128, 2);
+  const forgeOn = isBaseTextureActive();
+  const radialSeg = forgeOn ? 256 : 96;
+  const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, radialSeg, 1);
   // Z is up in this scene, keep top at Z=0.
   geometry.rotateX(Math.PI / 2);
   geometry.translate(0, 0, -thickness / 2);
-  if (isBaseTextureActive()) {
-    applyForgeDisplacement(geometry, getBaseTextureSettings());
+  if (forgeOn) {
+    applyForgeDisplacement(geometry, getBaseTextureSettings(), {
+      diskMode: true,
+      diskRadius: diameter / 2,
+    });
   } else {
     geometry.computeVertexNormals();
   }
