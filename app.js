@@ -20,7 +20,7 @@ const baseThicknessInput = document.getElementById("baseThickness");
 const baseThicknessValueInput = document.getElementById("baseThicknessValue");
 const themeSelect = document.getElementById("themeSelect");
 const langSelect = document.getElementById("langSelect");
-const sidebarSideSelect = document.getElementById("sidebarSideSelect");
+const sidebarSideSelect = document.getElementById("sidebarSideSelect"); // legacy cache field
 const sizeInput = document.getElementById("size");
 const sizeValueInput = document.getElementById("sizeValue");
 const thicknessInput = document.getElementById("thickness");
@@ -518,8 +518,8 @@ transformControls.addEventListener("mouseUp", () => {
 });
 scene.add(transformControls);
 
-scene.add(new THREE.AmbientLight(0xfff5e8, 0.55));
-const keyLight = new THREE.DirectionalLight(0xffeedd, 1.15);
+scene.add(new THREE.AmbientLight(0xfff8ee, 0.85));
+const keyLight = new THREE.DirectionalLight(0xfff0dd, 1.0);
 keyLight.position.set(80, -60, 140);
 keyLight.castShadow = true;
 keyLight.shadow.mapSize.set(1024, 1024);
@@ -838,7 +838,6 @@ async function loadLibraryManifest() {
 function applyLocale() {
   document.documentElement.lang = currentLang;
   document.getElementById("subtitle").textContent = t("subtitle");
-  document.getElementById("sidebarSideLabel").textContent = t("inspectorSide");
   document.getElementById("railModelLabel").textContent = t("modelSection");
   document.getElementById("railBaseLabel").textContent = t("baseSection");
   document.getElementById("railBatchLabel").textContent = t("batchSection");
@@ -1073,26 +1072,42 @@ function ensureForgeBaseEnabled() {
   }
 }
 
+function makeRoundBaseGeometry(diameter, thickness, curveSegments) {
+  const radius = diameter / 2;
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness,
+    bevelEnabled: false,
+    curveSegments,
+    steps: 1,
+  });
+  // Extrude along +Z; move so top face sits at Z=0.
+  geometry.translate(0, 0, -thickness);
+  return geometry;
+}
+
 function getMatcapTexture() {
   if (!matcapTexture) {
     matcapTexture = textureLoader.load(
-      "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/textures/matcaps/040full.jpg"
+      "https://threejs.org/examples/textures/matcaps/040full.jpg",
+      () => rebuild()
     );
   }
   return matcapTexture;
 }
 
 function createBaseMaterial() {
-  if (matcapModeInput?.checked) {
+  if (matcapModeInput?.checked && matcapTexture?.image) {
     return new THREE.MeshMatcapMaterial({
       matcap: getMatcapTexture(),
-      color: 0xb8a898,
+      color: 0xc8bcb0,
     });
   }
   return new THREE.MeshStandardMaterial({
-    color: 0x9a9088,
-    metalness: 0.72,
-    roughness: 0.38,
+    color: 0xb0a89c,
+    metalness: 0.55,
+    roughness: 0.42,
   });
 }
 
@@ -1117,13 +1132,15 @@ function prepareForgeBaseGeometry(sourceGeometry) {
     geometry.computeBoundingBox();
     const box = geometry.boundingBox;
     const roundFlatTop = detectRoundFlatTop(box);
-    applyForgeDisplacement(geometry, getBaseTextureSettings(), {
+    let g = geometry.toNonIndexed();
+    if (g !== geometry) geometry.dispose();
+    applyForgeDisplacement(g, getBaseTextureSettings(), {
       diskMode: roundFlatTop,
       diskRadius: Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5,
     });
-  } else {
-    geometry.computeVertexNormals();
+    return g;
   }
+  geometry.computeVertexNormals();
   return geometry;
 }
 
@@ -1131,11 +1148,10 @@ function makeGeneratedBaseMesh() {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
   const forgeOn = isBaseTextureActive();
-  const radialSeg = forgeOn ? 320 : 96;
-  const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, radialSeg, 1);
-  geometry.rotateX(Math.PI / 2);
-  geometry.translate(0, 0, -thickness / 2);
+  const segs = forgeOn ? 128 : 64;
+  let geometry = makeRoundBaseGeometry(diameter, thickness, segs);
   if (forgeOn) {
+    geometry = geometry.toNonIndexed();
     applyForgeDisplacement(geometry, getBaseTextureSettings(), {
       diskMode: true,
       diskRadius: diameter / 2,
@@ -1762,7 +1778,7 @@ function captureState() {
   return {
     lang: currentLang,
     theme: document.body.dataset.theme || "dark",
-    sidebarSide: sidebarSideSelect.value,
+    sidebarSide: "right",
     size: sizeInput.value,
     thickness: thicknessInput.value,
     scaleX: scaleXInput.value,
@@ -1816,7 +1832,6 @@ function applyState(state) {
   currentLang = state.lang ?? currentLang;
   langSelect.value = currentLang;
   themeSelect.value = state.theme ?? "dark";
-  sidebarSideSelect.value = state.sidebarSide ?? "right";
   sizeInput.value = state.size ?? sizeInput.value;
   thicknessInput.value = state.thickness ?? thicknessInput.value;
   scaleXInput.value = state.scaleX ?? scaleXInput.value;
@@ -1869,7 +1884,6 @@ function applyState(state) {
   svgText = state.svgText ?? svgText;
   svgName = state.svgName ?? svgName;
   applyTheme(themeSelect.value);
-  document.body.dataset.inspector = sidebarSideSelect.value;
   applyLocale();
   setFlatView(!!state.flatView);
   rebuild();
@@ -2460,10 +2474,6 @@ stlAddonScaleValueInput.addEventListener("input", () => {
 stlAddonScaleValueInput.addEventListener("change", commitHistory);
 
 themeSelect.addEventListener("change", () => applyTheme(themeSelect.value));
-sidebarSideSelect.addEventListener("change", () => {
-  document.body.dataset.inspector = sidebarSideSelect.value;
-  commitHistory();
-});
 langSelect.addEventListener("change", () => {
   currentLang = langSelect.value;
   applyLocale();
@@ -2897,8 +2907,6 @@ animate();
 
 refreshOutputs();
 applyTheme("dark");
-document.body.dataset.inspector = "right";
-sidebarSideSelect.value = "right";
 setGizmoMode("translate");
 gizmoEnabledInput.checked = true;
 initIconRail();

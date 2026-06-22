@@ -190,8 +190,8 @@ export function applyForgeDisplacement(geometry, settings, options = {}) {
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   const thickness = Math.max(box.max.z - box.min.z, 0.001);
-  const depthMul = settings.preset === "pitting" ? 0.55 : 0.62;
-  const maxDepth = Math.min(thickness * depthMul * settings.strength, thickness * 0.65);
+  const depthMul = settings.preset === "pitting" ? 0.7 : 0.95;
+  const maxDepth = Math.min(thickness * depthMul * settings.strength, thickness * 0.92);
   if (maxDepth <= 0.001) return;
 
   const markData = generateForgeMarks(settings, box);
@@ -204,7 +204,7 @@ export function applyForgeDisplacement(geometry, settings, options = {}) {
   geometry.computeVertexNormals();
   const normals = geometry.attributes.normal;
   const topZ = box.max.z;
-  const topEps = diskMode ? Math.max(thickness * 0.08, 0.05) : Math.max(thickness * 0.16, 0.06);
+  const topEps = diskMode ? Math.max(thickness * 0.2, 0.08) : Math.max(thickness * 0.2, 0.08);
   const topOnly = settings.topOnly !== false;
 
   for (let i = 0; i < pos.count; i++) {
@@ -220,7 +220,7 @@ export function applyForgeDisplacement(geometry, settings, options = {}) {
     const depth = sampleForgeInfluenceAt(x, y, ctx, settings) * maxDepth;
     if (depth <= 0.0005) continue;
 
-    if (diskMode || (topOnly && normals.getZ(i) > 0.55)) {
+    if (diskMode || topOnly) {
       pos.setZ(z - depth);
     } else {
       const nx = normals.getX(i);

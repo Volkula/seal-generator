@@ -23,43 +23,9 @@
       }
     </script>
   </head>
-  <body data-theme="dark" data-inspector="right">
+  <body data-theme="dark">
     <div class="app-shell">
-      <nav class="icon-rail" id="iconRail" aria-label="Panels">
-        <div class="rail-brand" aria-hidden="true"></div>
-        <button type="button" class="rail-btn active" data-panel="model" title="Model">
-          <span class="rail-icon">◆</span>
-          <span class="rail-label" id="railModelLabel">Model</span>
-        </button>
-        <button type="button" class="rail-btn" data-panel="base" title="Base">
-          <span class="rail-icon">◎</span>
-          <span class="rail-label" id="railBaseLabel">Base</span>
-        </button>
-        <button type="button" class="rail-btn" data-panel="batch" title="Batch">
-          <span class="rail-icon">▦</span>
-          <span class="rail-label" id="railBatchLabel">Batch</span>
-        </button>
-        <button type="button" class="rail-btn" data-panel="view" title="View">
-          <span class="rail-icon">👁</span>
-          <span class="rail-label" id="railViewLabel">View</span>
-        </button>
-        <div class="rail-spacer"></div>
-        <label class="rail-mini" title="Theme">
-          <select id="themeSelect" aria-label="Theme">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </label>
-        <label class="rail-mini" title="Language">
-          <select id="langSelect" aria-label="Language">
-            <option value="en">EN</option>
-            <option value="ru">RU</option>
-          </select>
-        </label>
-      </nav>
-
-      <div class="workspace">
-        <div class="viewport-wrap">
+      <div class="viewport-wrap">
           <main id="viewport"></main>
           <div class="viewport-hud">
             <div class="hud-group">
@@ -74,7 +40,7 @@
                 <span id="wireframeModeLabel">Wire</span>
               </label>
               <label class="hud-toggle">
-                <input id="matcapMode" type="checkbox" checked />
+                <input id="matcapMode" type="checkbox" />
                 <span id="matcapModeLabel">Metal</span>
               </label>
             </div>
@@ -87,7 +53,36 @@
           </div>
         </div>
 
-        <aside class="inspector" id="inspector">
+      <aside class="sidebar-right" id="sidebarRight">
+        <nav class="panel-tabs" id="iconRail" aria-label="Panels">
+          <button type="button" class="rail-btn active" data-panel="model" title="Model">
+            <span id="railModelLabel">Model</span>
+          </button>
+          <button type="button" class="rail-btn" data-panel="base" title="Base">
+            <span id="railBaseLabel">Base</span>
+          </button>
+          <button type="button" class="rail-btn" data-panel="batch" title="Batch">
+            <span id="railBatchLabel">Batch</span>
+          </button>
+          <button type="button" class="rail-btn" data-panel="view" title="View">
+            <span id="railViewLabel">View</span>
+          </button>
+          <div class="tabs-spacer"></div>
+          <label class="tabs-mini">
+            <select id="themeSelect" aria-label="Theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+          <label class="tabs-mini">
+            <select id="langSelect" aria-label="Language">
+              <option value="en">EN</option>
+              <option value="ru">RU</option>
+            </select>
+          </label>
+        </nav>
+
+        <div class="inspector" id="inspector">
           <header class="inspector-head">
             <h2 id="inspectorTitle">Model</h2>
             <p class="inspector-sub" id="subtitle">SVG → STL with live 3D preview</p>
@@ -392,13 +387,6 @@
                 </label>
               </div>
             </div>
-            <label class="field mini-field">
-              <span id="sidebarSideLabel">Inspector side</span>
-              <select id="sidebarSideSelect">
-                <option value="right">Right</option>
-                <option value="left">Left</option>
-              </select>
-            </label>
             <div class="export-block">
               <button id="exportBtn" class="btn-export" disabled>Export STL</button>
               <button id="exportCombinedBtn" class="btn-export-combined" disabled>Export STL (with base)</button>
@@ -417,8 +405,8 @@
               All code and visual assets in this repo are released under CC0 1.0 (public domain).
             </p>
           </section>
-        </aside>
-      </div>
+        </div>
+      </aside>
     </div>
 
     <div id="libraryPreviewModal" class="modal hidden">
