@@ -1140,13 +1140,13 @@ function prepareForgeBaseGeometry(sourceGeometry) {
   return geometry;
 }
 
-function makeGeneratedBaseMesh() {
+function makeGeneratedBaseMesh(forExport = false) {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
   const forgeOn = isBaseTextureActive();
   const segs = forgeOn ? 128 : 64;
   const settings = getBaseTextureSettings();
-  const gridRes = computeForgeGridResolution(diameter, settings.frequency);
+  const gridRes = computeForgeGridResolution(diameter, settings.frequency, forExport);
   let geometry = forgeOn
     ? makeForgeDiskGeometry(diameter, thickness, gridRes)
     : makeRoundBaseGeometry(diameter, thickness, segs, false);
@@ -1232,7 +1232,7 @@ function flattenObject3DSubsetToSingleMesh(sourceRoot, includeFn, materialFallba
  * Compose scene base root: disk (optional) + extra STL under it (optional). Both can coexist.
  * Applies base offset sliders on returned Group root.
  */
-function buildComposableBaseRoot(options = {}) {
+function buildComposableBaseRoot(options = {}, forExport = false) {
   ensureForgeBaseEnabled();
   const omitBaseOffset = !!options.omitBaseOffset;
   const hasCyl = generateBaseInput.checked;
@@ -1245,7 +1245,7 @@ function buildComposableBaseRoot(options = {}) {
   /** @type {THREE.Mesh|null} */
   let stl = null;
   if (hasCyl) {
-    cyl = makeGeneratedBaseMesh();
+    cyl = makeGeneratedBaseMesh(forExport);
     cyl.userData.role = "cyl";
     group.add(cyl);
   }
@@ -1340,9 +1340,9 @@ function forceMaterialOpaque(material) {
 }
 
 /** Fallback for batch / probing when compose returns null — single procedural disk at origin */
-function proceduralDiskOnlyRoot() {
+function proceduralDiskOnlyRoot(forExport = false) {
   const g = new THREE.Group();
-  g.add(makeGeneratedBaseMesh());
+  g.add(makeGeneratedBaseMesh(forExport));
   return g;
 }
 
@@ -1350,7 +1350,44 @@ function applyBaseOpaqueVisual(root) {
   root?.traverse?.((child) => {
     if (!child.material) return;
     child.material.transparent = false;
-    child.material.opacity = 0.95;
+    child.material.opacity = 1.0;
+    child.material.depthWrite = true;
+    child.material.needsUpdate = true;
+  });
+}
+
+function applyEmblemPreviewMaterial(mesh, inverse = false) {
+  if (!mesh?.material) return;
+  if (inverse) {
+    mesh.material.transparent = true;
+    mesh.material.opacity = 0.55;
+    mesh.material.color.setHex(0xff5a3c);
+    mesh.material.emissive = new THREE.Color(0x401000);
+    mesh.material.emissiveIntensity = 0.65;
+    mesh.material.depthWrite = false;
+    mesh.material.polygonOffset = false;
+    mesh.renderOrder = 5;
+  } else {
+    mesh.material.transparent = false;
+    mesh.material.opacity = 1.0;
+    mesh.material.color.setHex(0x58a6ff);
+    mesh.material.emissive = new THREE.Color(0x000000);
+    mesh.material.emissiveIntensity = 0.0;
+    mesh.material.depthWrite = true;
+    mesh.material.polygonOffset = true;
+    mesh.material.polygonOffsetFactor = 1;
+    mesh.material.polygonOffsetUnits = 1;
+    mesh.renderOrder = 1;
+  }
+  mesh.material.needsUpdate = true;
+}
+
+function setWireframe(mesh, { allowWireframe = true } = {}) {
+  if (!mesh?.traverse) return;
+  const useWire = allowWireframe && wireframeModeInput.checked;
+  mesh.traverse((child) => {
+    if (!child.material) return;
+    child.material.wireframe = useWire;
   });
 }
 
@@ -1365,14 +1402,6 @@ function applyInverseModeBaseFallbackVisual(root) {
   if (!root) return;
   root.visible = true;
   applyBaseOpaqueVisual(root);
-}
-
-function setWireframe(mesh) {
-  if (!mesh?.traverse) return;
-  mesh.traverse((child) => {
-    if (!child.material) return;
-    child.material.wireframe = wireframeModeInput.checked;
-  });
 }
 
 function updateGizmoTarget() {
@@ -1426,6 +1455,7 @@ function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride 
       emblemMesh.position.z += desiredTop - emblemBox.max.z;
     } else {
       emblemMesh.position.z = baseBox.max.z + lift - emblemBox.min.z;
+      emblemMesh.position.z += 0.03;
     }
   }
   lastEmblemCanonicalPosition.copy(emblemMesh.position);
@@ -1718,7 +1748,7 @@ function composePreview() {
       currentBaseMesh = base;
       applyBaseOpaqueVisual(currentBaseMesh);
       applyMeshPreviewFlags(currentBaseMesh);
-      setWireframe(currentBaseMesh);
+      setWireframe(currentBaseMesh, { allowWireframe: !isBaseTextureActive() });
       scene.add(currentBaseMesh);
     }
     exportCombinedBtn.disabled = true;
@@ -1730,38 +1760,19 @@ function composePreview() {
     currentBaseMesh = base;
     applyMeshPreviewFlags(currentBaseMesh);
     placeEmblem(currentBaseMesh, currentMesh);
-    setWireframe(currentBaseMesh);
+    setWireframe(currentBaseMesh, { allowWireframe: !isBaseTextureActive() });
     if (inverseModeInput.checked) {
       scene.add(currentBaseMesh);
-      currentMesh.material.transparent = true;
-      currentMesh.material.opacity = 0.55;
-      currentMesh.material.color.setHex(0xff5a3c);
-      currentMesh.material.emissive = new THREE.Color(0x401000);
-      currentMesh.material.emissiveIntensity = 0.65;
-      currentMesh.material.depthWrite = false;
-      currentMesh.material.needsUpdate = true;
-      currentMesh.renderOrder = 5;
+      applyEmblemPreviewMaterial(currentMesh, true);
       currentMesh.visible = false;
-      // Build CSG preview now; it replaces the source base visually. Falls back to opaque base if it fails.
       rebuildInverseCombinedMesh({ skipGizmoUpdate: true });
     } else {
-      currentMesh.material.transparent = false;
-      currentMesh.material.opacity = 1.0;
-      currentMesh.material.color.setHex(0x58a6ff);
-      currentMesh.material.emissive = new THREE.Color(0x000000);
-      currentMesh.material.emissiveIntensity = 0.0;
-      currentMesh.material.depthWrite = true;
-      currentMesh.material.needsUpdate = true;
-      currentMesh.renderOrder = 0;
+      applyEmblemPreviewMaterial(currentMesh, false);
       scene.add(currentBaseMesh);
     }
     exportCombinedBtn.disabled = false;
   } else {
-    currentMesh.material.transparent = false;
-    currentMesh.material.opacity = 1.0;
-    currentMesh.material.color.setHex(0x58a6ff);
-    currentMesh.material.emissive = new THREE.Color(0x000000);
-    currentMesh.material.emissiveIntensity = 0.0;
+    applyEmblemPreviewMaterial(currentMesh, false);
     currentMesh.position.set(0, 0, 0);
     lastEmblemCanonicalPosition.set(0, 0, 0);
     currentMesh.position.x += Number(emblemOffsetXInput.value);
@@ -2515,14 +2526,18 @@ exportCombinedBtn.addEventListener("click", () => {
   let flatCuttable = null;
   let stlAddonClone = null;
   if (currentBaseMesh) {
-    if (inverse && baseHasBothCylAndAddon(currentBaseMesh)) {
-      flatCuttable = flattenObject3DSubsetToSingleMesh(currentBaseMesh, isCuttableBaseChild);
-      stlAddonClone = flattenObject3DSubsetToSingleMesh(currentBaseMesh, isStlAddonBaseChild);
-    } else {
-      flatCuttable = flattenObject3DToSingleMesh(currentBaseMesh);
+    const exportRoot = buildComposableBaseRoot({}, true);
+    if (exportRoot) {
+      if (inverse && baseHasBothCylAndAddon(exportRoot)) {
+        flatCuttable = flattenObject3DSubsetToSingleMesh(exportRoot, isCuttableBaseChild);
+        stlAddonClone = flattenObject3DSubsetToSingleMesh(exportRoot, isStlAddonBaseChild);
+      } else {
+        flatCuttable = flattenObject3DToSingleMesh(exportRoot);
+      }
+      disposeObjectGeometryTree(exportRoot);
     }
   } else {
-    const r = proceduralDiskOnlyRoot();
+    const r = proceduralDiskOnlyRoot(true);
     flatCuttable = flattenObject3DToSingleMesh(r);
     disposeObjectGeometryTree(r);
   }

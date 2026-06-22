@@ -188,10 +188,15 @@ function sampleForgeInfluenceAt(x, y, ctx, settings) {
   return clampNumber(raw + grain * settings.strength, 0, 1);
 }
 
-export function computeForgeGridResolution(diameter, frequency) {
-  const byDiameter = Math.round(diameter * 5);
-  const byFrequency = Math.round(frequency * 32);
-  return clampNumber(Math.max(byDiameter, byFrequency, 220), 220, 512);
+export function computeForgeGridResolution(diameter, frequency, forExport = false) {
+  if (forExport) {
+    const byDiameter = Math.round(diameter * 3.5);
+    const byFrequency = Math.round(frequency * 22);
+    return clampNumber(Math.max(byDiameter, byFrequency, 160), 160, 320);
+  }
+  const byDiameter = Math.round(diameter * 1.5);
+  const byFrequency = Math.round(frequency * 10);
+  return clampNumber(Math.max(byDiameter, byFrequency, 72), 72, 120);
 }
 
 /**
@@ -199,8 +204,8 @@ export function computeForgeGridResolution(diameter, frequency) {
  */
 export function makeForgeDiskGeometry(diameter, thickness, radialSegs = 256) {
   const radius = diameter / 2;
-  const nRad = clampNumber(Math.round(radialSegs), 128, 512);
-  const ringSegs = clampNumber(Math.round(nRad * 0.42), 64, 220);
+  const nRad = clampNumber(Math.round(radialSegs), 48, 320);
+  const ringSegs = clampNumber(Math.round(nRad * 0.38), 32, 120);
   const positions = [];
   const indices = [];
   const ringStart = [0];
