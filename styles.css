@@ -347,6 +347,28 @@ body[data-theme="light"] .hud-group {
   column-gap: 8px;
 }
 
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.forge-reverse-row {
+  margin-top: -2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-dim);
+  background: #c9a24a12;
+}
+
+.forge-reverse-row > span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 select,
 input[type="number"] {
   width: 100%;

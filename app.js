@@ -82,6 +82,9 @@ const baseTextureMarkSizeInput = document.getElementById("baseTextureMarkSize");
 const baseTextureMarkSizeValueInput = document.getElementById("baseTextureMarkSizeValue");
 const baseTextureStrengthInput = document.getElementById("baseTextureStrength");
 const baseTextureStrengthValueInput = document.getElementById("baseTextureStrengthValue");
+const baseTextureReverseInput = document.getElementById("baseTextureReverse");
+const baseTextureRandomnessInput = document.getElementById("baseTextureRandomness");
+const baseTextureRandomnessValueInput = document.getElementById("baseTextureRandomnessValue");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
@@ -235,6 +238,8 @@ const i18n = {
     baseTextureMarkCross: "Cross forge",
     baseTextureMarkSize: "Mark size",
     baseTextureStrength: "Dent depth",
+    baseTextureReverse: "Raised burrs (reverse)",
+    baseTextureRandomness: "Pattern randomness",
     size: "Size (max dimension, mm)",
     thickness: "Thickness (mm)",
     scaleX: "Scale X",
@@ -356,6 +361,8 @@ const i18n = {
     baseTextureMarkCross: "Крестовая ковка",
     baseTextureMarkSize: "Размер следов",
     baseTextureStrength: "Глубина вмятин",
+    baseTextureReverse: "Буры (выпуклости)",
+    baseTextureRandomness: "Случайность узора",
     size: "Размер (макс. габарит, мм)",
     thickness: "Толщина (мм)",
     scaleX: "Масштаб X",
@@ -878,6 +885,8 @@ function applyLocale() {
   document.getElementById("baseTextureMarkShapeLabel").textContent = t("baseTextureMarkShape");
   document.getElementById("baseTextureMarkSizeLabel").textContent = t("baseTextureMarkSize");
   document.getElementById("baseTextureStrengthLabel").textContent = t("baseTextureStrength");
+  document.getElementById("baseTextureReverseLabel").textContent = t("baseTextureReverse");
+  document.getElementById("baseTextureRandomnessLabel").textContent = t("baseTextureRandomness");
   if (baseTexturePresetInput) {
     const presetLabels = {
       hammer: t("baseTexturePresetForged"),
@@ -1057,6 +1066,8 @@ function getBaseTextureSettings() {
     markShape: baseTextureMarkShapeInput?.value ?? "circle",
     markSize: clampNumber(Number(baseTextureMarkSizeInput?.value ?? 0.75), 0.15, 1.8),
     strength: clampNumber(Number(baseTextureStrengthInput?.value ?? 0.9), 0.1, 1),
+    randomness: clampNumber(Number(baseTextureRandomnessInput?.value ?? 0.35), 0, 1),
+    reverse: !!baseTextureReverseInput?.checked,
     topOnly: true,
   };
 }
@@ -1117,9 +1128,18 @@ function applyMeshPreviewFlags(mesh) {
 }
 
 function refreshBaseTextureControlsVisibility() {
-  if (!baseTextureControls) return;
-  baseTextureControls.hidden = !isBaseTextureActive();
+  const on = isBaseTextureActive();
+  if (baseTextureControls) baseTextureControls.hidden = !on;
   refreshForgeMarkShapeVisibility();
+}
+
+function applyForgeToDiskGeometry(geometry) {
+  if (!isBaseTextureActive() || !geometry) return;
+  const diameter = Number(baseDiameterInput.value);
+  applyForgeDisplacement(geometry, getBaseTextureSettings(), {
+    diskMode: true,
+    diskRadius: diameter / 2,
+  });
 }
 
 function prepareForgeBaseGeometry(sourceGeometry) {
@@ -1140,7 +1160,8 @@ function prepareForgeBaseGeometry(sourceGeometry) {
   return geometry;
 }
 
-function makeGeneratedBaseMesh(forExport = false) {
+function makeGeneratedBaseMesh(forExport = false, meshOpts = {}) {
+  const skipForge = !!meshOpts.skipForge;
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
   const forgeOn = isBaseTextureActive();
@@ -1150,7 +1171,7 @@ function makeGeneratedBaseMesh(forExport = false) {
   let geometry = forgeOn
     ? makeForgeDiskGeometry(diameter, thickness, gridRes)
     : makeRoundBaseGeometry(diameter, thickness, segs, false);
-  if (forgeOn) {
+  if (forgeOn && !skipForge) {
     applyForgeDisplacement(geometry, settings, {
       diskMode: true,
       diskRadius: diameter / 2,
@@ -1245,7 +1266,8 @@ function buildComposableBaseRoot(options = {}, forExport = false) {
   /** @type {THREE.Mesh|null} */
   let stl = null;
   if (hasCyl) {
-    cyl = makeGeneratedBaseMesh(forExport);
+    const smoothForCSG = !!options.smoothForCSG && isBaseTextureActive();
+    cyl = makeGeneratedBaseMesh(forExport, { skipForge: smoothForCSG });
     cyl.userData.role = "cyl";
     group.add(cyl);
   }
@@ -1340,9 +1362,9 @@ function forceMaterialOpaque(material) {
 }
 
 /** Fallback for batch / probing when compose returns null — single procedural disk at origin */
-function proceduralDiskOnlyRoot(forExport = false) {
+function proceduralDiskOnlyRoot(forExport = false, meshOpts = {}) {
   const g = new THREE.Group();
-  g.add(makeGeneratedBaseMesh(forExport));
+  g.add(makeGeneratedBaseMesh(forExport, meshOpts));
   return g;
 }
 
@@ -1465,6 +1487,19 @@ function placeEmblem(baseMesh, emblemMesh, inverseOverride = null, liftOverride 
   emblemMesh.position.z += Number(emblemOffsetZInput.value);
 }
 
+function normalizeGeometryForCSG(geometry) {
+  let g = geometry.clone();
+  if (g.index) {
+    const nonIndexed = g.toNonIndexed();
+    g.dispose();
+    g = nonIndexed;
+  }
+  g = mergeVertices(g, 1e-4);
+  g = ensureIndexedGeometry(g);
+  g.computeVertexNormals();
+  return g;
+}
+
 function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null, silentLogs = false) {
   const inverseMode = inverseOverride === null ? inverseModeInput.checked : !!inverseOverride;
   if (!silentLogs) {
@@ -1485,10 +1520,8 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
   emblemMesh.updateMatrixWorld(true);
   let baseWorld = baseMesh.geometry.clone().applyMatrix4(baseMesh.matrixWorld);
   let cutWorldBase = emblemMesh.geometry.clone().applyMatrix4(emblemMesh.matrixWorld);
-  if (baseWorld.index) baseWorld = baseWorld.toNonIndexed();
-  if (cutWorldBase.index) cutWorldBase = cutWorldBase.toNonIndexed();
-  baseWorld = ensureIndexedGeometry(mergeVertices(baseWorld, 1e-5));
-  cutWorldBase = ensureIndexedGeometry(mergeVertices(cutWorldBase, 1e-5));
+  baseWorld = normalizeGeometryForCSG(baseWorld);
+  cutWorldBase = normalizeGeometryForCSG(cutWorldBase);
   const baseSig = geometrySignature(baseWorld);
   if (!silentLogs) {
     dlog("inverse.export.normalized", {
@@ -1535,6 +1568,8 @@ function buildCombinedMeshForExport(baseMesh, emblemMesh, inverseOverride = null
       attempt(0.2) ||
       attempt(0.5);
     if (result) {
+      result.geometry = normalizeGeometryForCSG(result.geometry);
+      applyForgeToDiskGeometry(result.geometry);
       if (!silentLogs) dlog("inverse.export.end", { success: true, method: "bvh-csg" });
       return result;
     }
@@ -1667,8 +1702,12 @@ function rebuildInverseCombinedMesh(options = {}) {
   transformControls.detach();
   disposeCurrentInversePreviewMesh();
 
-  // Inverse cuts the disk only — STL addon stays whole and is reattached after CSG.
-  const flatCuttable = flattenObject3DSubsetToSingleMesh(currentBaseMesh, isCuttableBaseChild);
+  // Inverse cuts the disk only — use smooth watertight disk for CSG, then re-apply forge relief.
+  const csgBaseRoot = buildComposableBaseRoot({ smoothForCSG: isBaseTextureActive() });
+  const flatCuttable = csgBaseRoot
+    ? flattenObject3DSubsetToSingleMesh(csgBaseRoot, isCuttableBaseChild)
+    : flattenObject3DSubsetToSingleMesh(currentBaseMesh, isCuttableBaseChild);
+  if (csgBaseRoot) disposeObjectGeometryTree(csgBaseRoot);
   if (!flatCuttable) {
     applyInverseModeBaseFallbackVisual(currentBaseMesh);
     if (!skipGizmoUpdate) updateGizmoTarget();
@@ -1827,6 +1866,8 @@ function captureState() {
     baseTextureMarkShape: baseTextureMarkShapeInput?.value ?? "circle",
     baseTextureMarkSize: baseTextureMarkSizeInput?.value ?? "0.65",
     baseTextureStrength: baseTextureStrengthInput?.value ?? "0.75",
+    baseTextureReverse: baseTextureReverseInput?.checked ?? false,
+    baseTextureRandomness: baseTextureRandomnessInput?.value ?? "0.35",
     emblemRotX: emblemGizmoEuler.x,
     emblemRotY: emblemGizmoEuler.y,
     emblemRotZ: emblemGizmoEuler.z,
@@ -1883,6 +1924,8 @@ function applyState(state) {
   if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = state.baseTextureMarkShape ?? "circle";
   if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = state.baseTextureMarkSize ?? "0.65";
   if (baseTextureStrengthInput) baseTextureStrengthInput.value = state.baseTextureStrength ?? "0.75";
+  if (baseTextureReverseInput) baseTextureReverseInput.checked = !!state.baseTextureReverse;
+  if (baseTextureRandomnessInput) baseTextureRandomnessInput.value = state.baseTextureRandomness ?? "0.35";
   ensureForgeBaseEnabled();
   refreshBaseTextureControlsVisibility();
   refreshForgeMarkShapeVisibility();
@@ -1955,6 +1998,8 @@ function resetSettingsToDefaults() {
   if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = "circle";
   if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = "0.75";
   if (baseTextureStrengthInput) baseTextureStrengthInput.value = "0.9";
+  if (baseTextureReverseInput) baseTextureReverseInput.checked = false;
+  if (baseTextureRandomnessInput) baseTextureRandomnessInput.value = "0.35";
   refreshBaseTextureControlsVisibility();
   rebuild();
 }
@@ -2156,6 +2201,7 @@ function refreshOutputs() {
   if (baseTextureFrequencyValueInput) baseTextureFrequencyValueInput.value = `${Number(baseTextureFrequencyInput.value).toFixed(0)}`;
   if (baseTextureMarkSizeValueInput) baseTextureMarkSizeValueInput.value = `${Number(baseTextureMarkSizeInput.value).toFixed(2)}`;
   if (baseTextureStrengthValueInput) baseTextureStrengthValueInput.value = `${Number(baseTextureStrengthInput.value).toFixed(2)}`;
+  if (baseTextureRandomnessValueInput) baseTextureRandomnessValueInput.value = `${Number(baseTextureRandomnessInput.value).toFixed(2)}`;
   refreshBaseTextureControlsVisibility();
   if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseSourceGeometry;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
@@ -2305,7 +2351,7 @@ for (const input of [sizeInput, thicknessInput, scaleXInput, scaleYInput, scaleZ
   });
 }
 
-for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, stlAddonOffsetXInput, stlAddonOffsetYInput, stlAddonOffsetZInput, stlAddonScaleInput, baseTextureEnabledInput, baseTexturePresetInput, baseTextureFrequencyInput, baseTextureMarkShapeInput, baseTextureMarkSizeInput, baseTextureStrengthInput]) {
+for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, stlAddonOffsetXInput, stlAddonOffsetYInput, stlAddonOffsetZInput, stlAddonScaleInput, baseTextureEnabledInput, baseTexturePresetInput, baseTextureFrequencyInput, baseTextureMarkShapeInput, baseTextureMarkSizeInput, baseTextureStrengthInput, baseTextureReverseInput, baseTextureRandomnessInput]) {
   if (!input) continue;
   input.addEventListener("input", () => {
     if (input === baseTextureEnabledInput) {
@@ -2414,6 +2460,15 @@ if (baseTextureStrengthValueInput) {
     rebuild();
   });
   baseTextureStrengthValueInput.addEventListener("change", commitHistory);
+}
+
+if (baseTextureRandomnessValueInput) {
+  baseTextureRandomnessValueInput.addEventListener("input", () => {
+    const value = clampNumber(Number(baseTextureRandomnessValueInput.value || baseTextureRandomnessInput.value), 0, 1);
+    baseTextureRandomnessInput.value = `${value}`;
+    rebuild();
+  });
+  baseTextureRandomnessValueInput.addEventListener("change", commitHistory);
 }
 
 baseOffsetXValueInput.addEventListener("input", () => {
@@ -2527,7 +2582,8 @@ exportCombinedBtn.addEventListener("click", () => {
   let flatCuttable = null;
   let stlAddonClone = null;
   if (currentBaseMesh) {
-    const exportRoot = buildComposableBaseRoot({}, true);
+    const useSmoothCsgBase = inverse && isBaseTextureActive();
+    const exportRoot = buildComposableBaseRoot({ smoothForCSG: useSmoothCsgBase }, true);
     if (exportRoot) {
       if (inverse && baseHasBothCylAndAddon(exportRoot)) {
         flatCuttable = flattenObject3DSubsetToSingleMesh(exportRoot, isCuttableBaseChild);
@@ -2643,7 +2699,11 @@ async function runBatchExport() {
     try {
       const text = await file.text();
       mesh = buildMesh(text, opts).mesh;
-      const baseRoot = buildComposableBaseRoot({ omitBaseOffset: true }) || proceduralDiskOnlyRoot();
+      const baseRoot =
+        buildComposableBaseRoot({
+          omitBaseOffset: true,
+          smoothForCSG: inverse && isBaseTextureActive(),
+        }) || proceduralDiskOnlyRoot(false, { skipForge: inverse && isBaseTextureActive() });
       const splitForInverse = inverse && baseHasBothCylAndAddon(baseRoot);
       if (splitForInverse) {
         activeCuttable = flattenObject3DSubsetToSingleMesh(baseRoot, isCuttableBaseChild);
