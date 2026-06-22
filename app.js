@@ -1758,6 +1758,7 @@ function composePreview() {
 
   if (base) {
     currentBaseMesh = base;
+    applyBaseOpaqueVisual(currentBaseMesh);
     applyMeshPreviewFlags(currentBaseMesh);
     placeEmblem(currentBaseMesh, currentMesh);
     setWireframe(currentBaseMesh, { allowWireframe: !isBaseTextureActive() });

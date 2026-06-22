@@ -222,7 +222,7 @@ export function makeForgeDiskGeometry(diameter, thickness, radialSegs = 256) {
 
   for (let i = 0; i < nRad; i++) {
     const next = (i + 1) % nRad;
-    indices.push(0, ringStart[1] + i, ringStart[1] + next);
+    indices.push(0, ringStart[1] + next, ringStart[1] + i);
   }
 
   for (let ring = 1; ring < ringSegs; ring++) {
@@ -232,8 +232,8 @@ export function makeForgeDiskGeometry(diameter, thickness, radialSegs = 256) {
       const b = ringStart[ring] + next;
       const c = ringStart[ring + 1] + next;
       const d = ringStart[ring + 1] + i;
-      indices.push(a, b, c);
-      indices.push(a, c, d);
+      indices.push(a, d, b);
+      indices.push(b, d, c);
     }
   }
 
@@ -303,8 +303,9 @@ export function applyForgeDisplacement(geometry, settings, options = {}) {
 
     if (topOnly) {
       const nearTop = topZ - z <= topEps;
-      const upFacing = nz > 0.35;
-      if (!nearTop || !upFacing) continue;
+      const upFacing = nz > 0.5;
+      const onDiskTop = diskMode && nearTop && Math.hypot(x, y) <= diskRadius * 1.001;
+      if (!onDiskTop && !(nearTop && upFacing)) continue;
     }
 
     if (diskMode && Math.hypot(x, y) > diskRadius * 1.002) continue;

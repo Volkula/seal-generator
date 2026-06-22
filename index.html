@@ -26,6 +26,12 @@
   <body data-theme="dark">
     <div class="app-shell">
       <aside class="sidebar-left" id="sidebarLeft">
+        <div class="export-dock" id="exportDock">
+          <button id="exportBtn" class="btn-export" disabled>Export STL</button>
+          <button id="exportCombinedBtn" class="btn-export-combined" disabled>Export STL (with base)</button>
+          <button id="exportZipBtn" class="btn-export-zip" disabled>Export ZIP (batch)</button>
+        </div>
+
         <nav class="panel-tabs" id="iconRail" aria-label="Panels">
           <button type="button" class="rail-btn active" data-panel="model" title="Model">
             <span id="railModelLabel">Model</span>
@@ -53,12 +59,6 @@
             </select>
           </label>
         </nav>
-
-        <div class="export-dock" id="exportDock">
-          <button id="exportBtn" class="btn-export" disabled>Export STL</button>
-          <button id="exportCombinedBtn" class="btn-export-combined" disabled>Export STL (with base)</button>
-          <button id="exportZipBtn" class="btn-export-zip" disabled>Export ZIP (batch)</button>
-        </div>
 
         <div class="inspector" id="inspector">
           <header class="inspector-head">
