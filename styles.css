@@ -213,6 +213,26 @@ body[data-theme="light"] .hud-group {
   accent-color: var(--accent);
 }
 
+.hud-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.hud-select select {
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  max-width: 88px;
+  cursor: pointer;
+}
+
 .progress-overlay {
   position: absolute;
   inset: 0;

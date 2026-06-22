@@ -111,7 +111,7 @@ const selectedObjectLabel = document.getElementById("selectedObjectLabel");
 const statusEl = document.getElementById("status");
 const inspectorTitleEl = document.getElementById("inspectorTitle");
 const iconRail = document.getElementById("iconRail");
-const matcapModeInput = document.getElementById("matcapMode");
+const previewShadingInput = document.getElementById("previewShading");
 const viewTopBtn = document.getElementById("viewTopBtn");
 const viewFrontBtn = document.getElementById("viewFrontBtn");
 const viewIsoBtn = document.getElementById("viewIsoBtn");
@@ -190,7 +190,7 @@ const gizmoModes = ["translate", "rotate", "scale"];
 let gizmoModeIndex = 0;
 let selectedObjectType = "emblem";
 let activeInspectorPanel = "model";
-let matcapTexture = null;
+const matcapTextures = {};
 const textureLoader = new THREE.TextureLoader();
 const DEBUG = true;
 
@@ -268,7 +268,10 @@ const i18n = {
     baseTexturePresetSunburst: "Sunburst rays",
     baseTexturePresetHex: "Hex grid",
     forgeHint: "Auto-enables disk base. Dents are real geometry in exported STL.",
-    matcapMode: "Metal shading",
+    previewShading: "Shading",
+    previewShadingStandard: "Standard",
+    previewShadingWax: "Wax (Blender)",
+    previewShadingMetal: "Metal",
     viewTop: "Top",
     viewFront: "Front",
     viewIso: "Iso",
@@ -404,7 +407,10 @@ const i18n = {
     baseTexturePresetSunburst: "Лучи от центра",
     baseTexturePresetHex: "Соты",
     forgeHint: "Включает диск. Вмятины — реальная геометрия в STL.",
-    matcapMode: "Металл",
+    previewShading: "Материал",
+    previewShadingStandard: "Стандарт",
+    previewShadingWax: "Воск (Blender)",
+    previewShadingMetal: "Металл",
     viewTop: "Сверху",
     viewFront: "Спереди",
     viewIso: "Изо",
@@ -1175,10 +1181,7 @@ async function previewStlLibraryItem(path) {
     box.getCenter(center);
     geometry.translate(-center.x, -center.y, -center.z);
     disposeStlPreviewMesh();
-    stlPreviewState.mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({ color: 0xb0a89c, metalness: 0.55, roughness: 0.42 })
-    );
+    stlPreviewState.mesh = new THREE.Mesh(geometry, createPreviewMaterial({ role: "base" }));
     stlPreviewState.scene.add(stlPreviewState.mesh);
     const maxDim = Math.max(size.x, size.y, size.z, 1);
     stlPreviewState.camera.position.set(maxDim * 1.35, maxDim * 0.95, maxDim * 1.35);
@@ -1258,7 +1261,14 @@ function applyLocale() {
   document.getElementById("railBatchLabel").textContent = t("batchSection");
   document.getElementById("railViewLabel").textContent = t("viewSection");
   if (forgeHint) forgeHint.textContent = t("forgeHint");
-  if (matcapModeInput?.nextElementSibling) matcapModeInput.nextElementSibling.textContent = t("matcapMode");
+  if (previewShadingInput) {
+    const label = document.getElementById("previewShadingLabel");
+    if (label) label.textContent = t("previewShading");
+    const opts = previewShadingInput.options;
+    if (opts[0]) opts[0].textContent = t("previewShadingStandard");
+    if (opts[1]) opts[1].textContent = t("previewShadingWax");
+    if (opts[2]) opts[2].textContent = t("previewShadingMetal");
+  }
   if (viewTopBtn) viewTopBtn.textContent = t("viewTop");
   if (viewFrontBtn) viewFrontBtn.textContent = t("viewFront");
   if (viewIsoBtn) viewIsoBtn.textContent = t("viewIso");
@@ -1379,7 +1389,7 @@ function applyLocale() {
 function applyTheme(theme) {
   const isLight = theme === "light";
   document.body.dataset.theme = isLight ? "light" : "dark";
-  scene.background = new THREE.Color(isLight ? 0xe8e0d0 : 0x12100e);
+  updatePreviewViewportStyle();
   scene.remove(grid);
   grid.geometry.dispose();
   if (Array.isArray(grid.material)) {
@@ -1511,21 +1521,148 @@ function makeRoundBaseGeometry(diameter, thickness, curveSegments, forgeOn = fal
   return geometry;
 }
 
-function getMatcapTexture() {
-  if (!matcapTexture) {
-    matcapTexture = textureLoader.load(
+function getPreviewShading() {
+  const value = previewShadingInput?.value ?? "standard";
+  return value === "wax" || value === "metal" ? value : "standard";
+}
+
+function updatePreviewViewportStyle() {
+  const isLight = document.body.dataset.theme === "light";
+  const shading = getPreviewShading();
+  if (shading === "wax") {
+    scene.background = new THREE.Color(isLight ? 0xc8c4be : 0x3a3a3a);
+    grid.visible = false;
+  } else {
+    scene.background = new THREE.Color(isLight ? 0xe8e0d0 : 0x12100e);
+    grid.visible = true;
+  }
+}
+
+function clampByte(v) {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+/** Procedural MatCap sphere — warm wax/clay look similar to Blender sculpt viewport. */
+function createProceduralMatcapTexture(preset) {
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(size, size);
+  const data = img.data;
+  const cx = size / 2;
+  const r = size / 2 - 1;
+  const lx = 0.32;
+  const ly = 0.58;
+  const lz = 0.75;
+  const lLen = Math.hypot(lx, ly, lz);
+  const lxn = lx / lLen;
+  const lyn = ly / lLen;
+  const lzn = lz / lLen;
+  const palettes = {
+    wax: {
+      base: [168, 92, 72],
+      highlight: [228, 168, 138],
+      shadow: [88, 42, 34],
+      spec: [255, 235, 215],
+      specPower: 24,
+      specStrength: 0.28,
+      rim: 0.42,
+      cavity: 0.35,
+    },
+    metal: {
+      base: [158, 152, 145],
+      highlight: [238, 236, 228],
+      shadow: [58, 56, 52],
+      spec: [255, 255, 255],
+      specPower: 64,
+      specStrength: 0.62,
+      rim: 0.18,
+      cavity: 0.12,
+    },
+  };
+  const p = palettes[preset] ?? palettes.wax;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const nx = (x - cx + 0.5) / r;
+      const ny = (y - cx + 0.5) / r;
+      const d2 = nx * nx + ny * ny;
+      const idx = (y * size + x) * 4;
+      if (d2 > 1) {
+        data[idx + 3] = 0;
+        continue;
+      }
+      const nz = Math.sqrt(Math.max(0, 1 - d2));
+      const ndotl = Math.max(0, nx * lxn + ny * lyn + nz * lzn);
+      const hemi = 0.22 + 0.78 * (nz * 0.5 + 0.5);
+      const spec = Math.pow(ndotl, p.specPower) * p.specStrength;
+      const rim = 1 - p.rim * Math.pow(1 - nz, 2);
+      const cavity = 1 - p.cavity * Math.pow(1 - ndotl, 2) * (1 - nz);
+      let red = p.base[0] + (p.highlight[0] - p.base[0]) * ndotl;
+      let green = p.base[1] + (p.highlight[1] - p.base[1]) * ndotl;
+      let blue = p.base[2] + (p.highlight[2] - p.base[2]) * ndotl;
+      const shadowMix = (1 - ndotl) * 0.55;
+      red = red * (1 - shadowMix) + p.shadow[0] * shadowMix;
+      green = green * (1 - shadowMix) + p.shadow[1] * shadowMix;
+      blue = blue * (1 - shadowMix) + p.shadow[2] * shadowMix;
+      red = red * hemi * rim * cavity + p.spec[0] * spec;
+      green = green * hemi * rim * cavity + p.spec[1] * spec;
+      blue = blue * hemi * rim * cavity + p.spec[2] * spec;
+      data[idx] = clampByte(red);
+      data[idx + 1] = clampByte(green);
+      data[idx + 2] = clampByte(blue);
+      data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function getMatcapTexture(preset) {
+  if (matcapTextures[preset]?.image || matcapTextures[preset]?.isCanvasTexture) {
+    return matcapTextures[preset];
+  }
+  if (preset === "wax") {
+    matcapTextures.wax = createProceduralMatcapTexture("wax");
+    return matcapTextures.wax;
+  }
+  if (!matcapTextures.metal) {
+    matcapTextures.metal = textureLoader.load(
       "https://threejs.org/examples/textures/matcaps/040full.jpg",
       () => rebuild()
     );
   }
-  return matcapTexture;
+  return matcapTextures.metal;
 }
 
-function createBaseMaterial() {
-  if (matcapModeInput?.checked && matcapTexture?.image) {
-    return new THREE.MeshMatcapMaterial({
-      matcap: getMatcapTexture(),
-      color: 0xc8bcb0,
+function createPreviewMaterial({ role = "base", inverse = false } = {}) {
+  const shading = getPreviewShading();
+  if ((shading === "wax" || shading === "metal") && !inverse) {
+    const matcap = getMatcapTexture(shading);
+    if (matcap && (matcap.isCanvasTexture || matcap.image)) {
+      return new THREE.MeshMatcapMaterial({
+        matcap,
+        color: 0xffffff,
+        flatShading: shading === "wax",
+      });
+    }
+  }
+  if (role === "emblem" || inverse) {
+    return new THREE.MeshStandardMaterial({
+      color: inverse ? 0xff5a3c : 0x58a6ff,
+      metalness: 0.1,
+      roughness: 0.55,
+      transparent: inverse,
+      opacity: inverse ? 0.55 : 1,
+      emissive: new THREE.Color(inverse ? 0x401000 : 0x000000),
+      emissiveIntensity: inverse ? 0.65 : 0,
+      depthWrite: !inverse,
+      polygonOffset: !inverse,
+      polygonOffsetFactor: inverse ? 0 : 1,
+      polygonOffsetUnits: inverse ? 0 : 1,
     });
   }
   return new THREE.MeshStandardMaterial({
@@ -1534,6 +1671,10 @@ function createBaseMaterial() {
     roughness: 0.42,
     flatShading: false,
   });
+}
+
+function createBaseMaterial() {
+  return createPreviewMaterial({ role: "base" });
 }
 
 function applyMeshPreviewFlags(mesh) {
@@ -1800,27 +1941,14 @@ function applyBaseOpaqueVisual(root) {
 }
 
 function applyEmblemPreviewMaterial(mesh, inverse = false) {
-  if (!mesh?.material) return;
+  if (!mesh) return;
+  const prev = mesh.material;
+  mesh.material = createPreviewMaterial({ role: "emblem", inverse });
+  if (prev && prev !== mesh.material) prev.dispose?.();
   if (inverse) {
-    mesh.material.transparent = true;
-    mesh.material.opacity = 0.55;
-    mesh.material.color.setHex(0xff5a3c);
-    mesh.material.emissive = new THREE.Color(0x401000);
-    mesh.material.emissiveIntensity = 0.65;
-    mesh.material.depthWrite = false;
-    mesh.material.polygonOffset = false;
-    mesh.renderOrder = 5;
+    mesh.material.renderOrder = 5;
   } else {
-    mesh.material.transparent = false;
-    mesh.material.opacity = 1.0;
-    mesh.material.color.setHex(0x58a6ff);
-    mesh.material.emissive = new THREE.Color(0x000000);
-    mesh.material.emissiveIntensity = 0.0;
-    mesh.material.depthWrite = true;
-    mesh.material.polygonOffset = true;
-    mesh.material.polygonOffsetFactor = 1;
-    mesh.material.polygonOffsetUnits = 1;
-    mesh.renderOrder = 1;
+    mesh.material.renderOrder = 1;
   }
   mesh.material.needsUpdate = true;
 }
@@ -2303,6 +2431,7 @@ function captureState() {
     emblemScaleY: emblemGizmoScale.y,
     emblemScaleZ: emblemGizmoScale.z,
     flatView: isFlatView,
+    previewShading: getPreviewShading(),
     svgText,
     svgName,
   };
@@ -2388,6 +2517,10 @@ function applyState(state) {
   applyTheme(themeSelect.value);
   applyLocale();
   setFlatView(!!state.flatView);
+  if (previewShadingInput) {
+    previewShadingInput.value = state.previewShading ?? "standard";
+    updatePreviewViewportStyle();
+  }
   rebuild();
   isApplyingHistory = false;
 }
@@ -2419,6 +2552,7 @@ function resetSettingsToDefaults() {
   flipYInput.checked = true;
   inverseModeInput.checked = false;
   wireframeModeInput.checked = false;
+  if (previewShadingInput) previewShadingInput.value = "standard";
   gizmoEnabledInput.checked = true;
   gizmoTargetInput.value = "emblem";
   setGizmoMode("translate");
@@ -2448,6 +2582,7 @@ function resetSettingsToDefaults() {
   if (baseTextureRandomnessInput) baseTextureRandomnessInput.value = "0.35";
   clearBaseStlAddon();
   refreshBaseTextureControlsVisibility();
+  updatePreviewViewportStyle();
   rebuild();
 }
 
@@ -2615,14 +2750,7 @@ function buildMesh(svg, opts) {
   const finalSize = new THREE.Vector3();
   finalBox.getSize(finalSize);
 
-  const mesh = new THREE.Mesh(
-    merged,
-    new THREE.MeshStandardMaterial({
-      color: 0x58a6ff,
-      metalness: 0.1,
-      roughness: 0.55,
-    })
-  );
+  const mesh = new THREE.Mesh(merged, createPreviewMaterial({ role: "emblem" }));
 
   return {
     mesh,
@@ -3347,7 +3475,8 @@ viewTopBtn?.addEventListener("click", () => setViewPreset("top"));
 viewFrontBtn?.addEventListener("click", () => setViewPreset("front"));
 viewIsoBtn?.addEventListener("click", () => setViewPreset("iso"));
 
-matcapModeInput?.addEventListener("change", () => {
+previewShadingInput?.addEventListener("change", () => {
+  updatePreviewViewportStyle();
   rebuild();
   commitHistory();
 });
