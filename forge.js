@@ -68,12 +68,18 @@ function generateForgeMarks(settings, box) {
   return { marks, cell, cxMid, cyMid, span };
 }
 
+function rimEdgeFactor(x, y, ctx) {
+  const r = Math.hypot(x - ctx.cxMid, y - ctx.cyMid);
+  const limit = ctx.diskMode ? ctx.diskRadius * 0.98 : ctx.span * 0.5;
+  return forgeSmoothFalloff(1 - r / Math.max(limit, 0.001));
+}
+
 function sampleHammerInfluence(x, y, ctx, settings) {
   let sum = 0;
   for (const mark of ctx.marks) {
     sum += forgeMarkInfluenceAt(x, y, mark, ctx.cell, settings.markShape, settings.markSize);
   }
-  return 1 - Math.exp(-2.8 * sum);
+  return (1 - Math.exp(-2.8 * sum)) * rimEdgeFactor(x, y, ctx);
 }
 
 function sampleRingsInfluence(x, y, ctx, settings) {
@@ -82,8 +88,7 @@ function sampleRingsInfluence(x, y, ctx, settings) {
   const r = Math.hypot(dx, dy);
   const wave = (r / ctx.cell) * Math.PI * 2 * (settings.frequency / 12);
   const groove = 0.5 + 0.5 * Math.cos(wave);
-  const edge = forgeSmoothFalloff(1 - r / (ctx.span * 0.5));
-  return groove * edge * settings.markSize;
+  return groove * rimEdgeFactor(x, y, ctx) * settings.markSize;
 }
 
 function sampleKnurlInfluence(x, y, ctx, settings) {
@@ -93,8 +98,7 @@ function sampleKnurlInfluence(x, y, ctx, settings) {
   const u = px + py;
   const v = px - py;
   const diamond = Math.abs(Math.sin(u * Math.PI)) * Math.abs(Math.sin(v * Math.PI));
-  const edge = forgeSmoothFalloff(1 - Math.hypot(x - ctx.cxMid, y - ctx.cyMid) / (ctx.span * 0.5));
-  return diamond * edge;
+  return diamond * rimEdgeFactor(x, y, ctx);
 }
 
 function sampleRollInfluence(x, y, ctx, settings) {
@@ -102,8 +106,7 @@ function sampleRollInfluence(x, y, ctx, settings) {
   const lx = (x - ctx.cxMid) * Math.cos(angle) + (y - ctx.cyMid) * Math.sin(angle);
   const wave = (lx / ctx.cell) * Math.PI * 2;
   const groove = 0.5 + 0.5 * Math.cos(wave);
-  const edge = forgeSmoothFalloff(1 - Math.hypot(x - ctx.cxMid, y - ctx.cyMid) / (ctx.span * 0.5));
-  return groove * edge * settings.markSize;
+  return groove * rimEdgeFactor(x, y, ctx) * settings.markSize;
 }
 
 function samplePittingInfluence(x, y, ctx, settings) {
@@ -119,7 +122,7 @@ function samplePittingInfluence(x, y, ctx, settings) {
       peak = Math.max(peak, forgeEllipticalInfluence(x - cx, y - cy, r, r));
     }
   }
-  return peak;
+  return peak * rimEdgeFactor(x, y, ctx);
 }
 
 function sampleSunburstInfluence(x, y, ctx, settings) {
@@ -129,8 +132,7 @@ function sampleSunburstInfluence(x, y, ctx, settings) {
   const a = Math.atan2(dy, dx);
   const rays = settings.frequency;
   const ray = 0.5 + 0.5 * Math.cos(a * rays + r / ctx.cell * 0.35);
-  const edge = forgeSmoothFalloff(1 - r / (ctx.span * 0.5));
-  return ray * edge * settings.markSize;
+  return ray * rimEdgeFactor(x, y, ctx) * settings.markSize;
 }
 
 function sampleHexInfluence(x, y, ctx, settings) {
@@ -146,8 +148,7 @@ function sampleHexInfluence(x, y, ctx, settings) {
   const rf = r - sy;
   const dist = Math.max(Math.abs(qf), Math.abs(rf), Math.abs(-qf - rf - sz + sx + sy));
   const edge = forgeSmoothFalloff(1 - dist * 2.2);
-  const rim = forgeSmoothFalloff(1 - Math.hypot(x - ctx.cxMid, y - ctx.cyMid) / (ctx.span * 0.5));
-  return edge * rim;
+  return edge * rimEdgeFactor(x, y, ctx);
 }
 
 function sampleForgeInfluenceAt(x, y, ctx, settings) {
@@ -190,42 +191,45 @@ export function applyForgeDisplacement(geometry, settings, options = {}) {
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   const thickness = Math.max(box.max.z - box.min.z, 0.001);
-  const depthMul = settings.preset === "pitting" ? 0.7 : 0.95;
-  const maxDepth = Math.min(thickness * depthMul * settings.strength, thickness * 0.92);
-  if (maxDepth <= 0.001) return;
+  const depthMul = settings.preset === "pitting" ? 0.55 : 0.45;
+  const maxDepth = Math.min(thickness * depthMul * settings.strength, thickness * 0.48);
+  if (maxDepth <= 0.0005) return;
 
   const markData = generateForgeMarks(settings, box);
-  const ctx = { ...markData, marks: markData.marks };
-  if (!ctx.marks.length && settings.preset === "hammer") return;
-
   const diskMode = !!options.diskMode;
   const diskRadius = options.diskRadius ?? Math.max(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5;
+  const ctx = { ...markData, marks: markData.marks, diskMode, diskRadius };
+  if (!ctx.marks.length && settings.preset === "hammer") return;
+
   const pos = geometry.attributes.position;
   geometry.computeVertexNormals();
   const normals = geometry.attributes.normal;
   const topZ = box.max.z;
-  const topEps = diskMode ? Math.max(thickness * 0.2, 0.08) : Math.max(thickness * 0.2, 0.08);
+  const topEps = Math.max(thickness * 0.06, 0.02);
   const topOnly = settings.topOnly !== false;
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
+    const nz = normals.getZ(i);
 
-    if (topOnly && z < topZ - topEps) continue;
+    if (topOnly) {
+      const nearTop = topZ - z <= topEps;
+      const upFacing = nz > 0.35;
+      if (!nearTop || !upFacing) continue;
+    }
 
     if (diskMode && Math.hypot(x, y) > diskRadius * 1.002) continue;
-    if (!diskMode && topOnly && normals.getZ(i) < 0.3) continue;
 
     const depth = sampleForgeInfluenceAt(x, y, ctx, settings) * maxDepth;
     if (depth <= 0.0005) continue;
 
     if (diskMode || topOnly) {
-      pos.setZ(z - depth);
+      pos.setZ(i, z - depth);
     } else {
       const nx = normals.getX(i);
       const ny = normals.getY(i);
-      const nz = normals.getZ(i);
       pos.setXYZ(i, x - nx * depth, y - ny * depth, z - nz * depth);
     }
   }

@@ -25,35 +25,7 @@
   </head>
   <body data-theme="dark">
     <div class="app-shell">
-      <div class="viewport-wrap">
-          <main id="viewport"></main>
-          <div class="viewport-hud">
-            <div class="hud-group">
-              <button type="button" id="viewTopBtn" class="hud-btn">Top</button>
-              <button type="button" id="viewFrontBtn" class="hud-btn">Front</button>
-              <button type="button" id="viewIsoBtn" class="hud-btn">Iso</button>
-              <button type="button" id="flatViewBtn" class="hud-btn">Flat</button>
-            </div>
-            <div class="hud-group">
-              <label class="hud-toggle">
-                <input id="wireframeMode" type="checkbox" />
-                <span id="wireframeModeLabel">Wire</span>
-              </label>
-              <label class="hud-toggle">
-                <input id="matcapMode" type="checkbox" />
-                <span id="matcapModeLabel">Metal</span>
-              </label>
-            </div>
-          </div>
-          <div id="progressOverlay" class="progress-overlay hidden" aria-live="polite">
-            <div class="progress-card">
-              <p id="progressLabel">Exporting…</p>
-              <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
-            </div>
-          </div>
-        </div>
-
-      <aside class="sidebar-right" id="sidebarRight">
+      <aside class="sidebar-left" id="sidebarLeft">
         <nav class="panel-tabs" id="iconRail" aria-label="Panels">
           <button type="button" class="rail-btn active" data-panel="model" title="Model">
             <span id="railModelLabel">Model</span>
@@ -81,6 +53,12 @@
             </select>
           </label>
         </nav>
+
+        <div class="export-dock" id="exportDock">
+          <button id="exportBtn" class="btn-export" disabled>Export STL</button>
+          <button id="exportCombinedBtn" class="btn-export-combined" disabled>Export STL (with base)</button>
+          <button id="exportZipBtn" class="btn-export-zip" disabled>Export ZIP (batch)</button>
+        </div>
 
         <div class="inspector" id="inspector">
           <header class="inspector-head">
@@ -387,11 +365,6 @@
                 </label>
               </div>
             </div>
-            <div class="export-block">
-              <button id="exportBtn" class="btn-export" disabled>Export STL</button>
-              <button id="exportCombinedBtn" class="btn-export-combined" disabled>Export STL (with base)</button>
-              <button id="exportZipBtn" class="btn-export-zip" disabled>Export ZIP (batch)</button>
-            </div>
             <div class="row-buttons">
               <button id="undoBtn">Undo</button>
               <button id="redoBtn">Redo</button>
@@ -407,6 +380,34 @@
           </section>
         </div>
       </aside>
+
+      <div class="viewport-wrap">
+          <main id="viewport"></main>
+          <div class="viewport-hud">
+            <div class="hud-group">
+              <button type="button" id="viewTopBtn" class="hud-btn">Top</button>
+              <button type="button" id="viewFrontBtn" class="hud-btn">Front</button>
+              <button type="button" id="viewIsoBtn" class="hud-btn">Iso</button>
+              <button type="button" id="flatViewBtn" class="hud-btn">Flat</button>
+            </div>
+            <div class="hud-group">
+              <label class="hud-toggle">
+                <input id="wireframeMode" type="checkbox" />
+                <span id="wireframeModeLabel">Wire</span>
+              </label>
+              <label class="hud-toggle">
+                <input id="matcapMode" type="checkbox" />
+                <span id="matcapModeLabel">Metal</span>
+              </label>
+            </div>
+          </div>
+          <div id="progressOverlay" class="progress-overlay hidden" aria-live="polite">
+            <div class="progress-card">
+              <p id="progressLabel">Exporting…</p>
+              <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+            </div>
+          </div>
+        </div>
     </div>
 
     <div id="libraryPreviewModal" class="modal hidden">

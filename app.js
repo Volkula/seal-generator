@@ -1072,18 +1072,13 @@ function ensureForgeBaseEnabled() {
   }
 }
 
-function makeRoundBaseGeometry(diameter, thickness, curveSegments) {
+function makeRoundBaseGeometry(diameter, thickness, curveSegments, forgeOn = false) {
   const radius = diameter / 2;
-  const shape = new THREE.Shape();
-  shape.absarc(0, 0, radius, 0, Math.PI * 2, false);
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: thickness,
-    bevelEnabled: false,
-    curveSegments,
-    steps: 1,
-  });
-  // Extrude along +Z; move so top face sits at Z=0.
-  geometry.translate(0, 0, -thickness);
+  const radialSegments = Math.max(32, curveSegments);
+  const heightSegments = forgeOn ? 8 : 1;
+  const geometry = new THREE.CylinderGeometry(radius, radius, thickness, radialSegments, heightSegments, false);
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, 0, -thickness / 2);
   return geometry;
 }
 
@@ -1149,7 +1144,7 @@ function makeGeneratedBaseMesh() {
   const thickness = Number(baseThicknessInput.value);
   const forgeOn = isBaseTextureActive();
   const segs = forgeOn ? 128 : 64;
-  let geometry = makeRoundBaseGeometry(diameter, thickness, segs);
+  let geometry = makeRoundBaseGeometry(diameter, thickness, segs, forgeOn);
   if (forgeOn) {
     geometry = geometry.toNonIndexed();
     applyForgeDisplacement(geometry, getBaseTextureSettings(), {
@@ -1234,6 +1229,7 @@ function flattenObject3DSubsetToSingleMesh(sourceRoot, includeFn, materialFallba
  * Applies base offset sliders on returned Group root.
  */
 function buildComposableBaseRoot(options = {}) {
+  ensureForgeBaseEnabled();
   const omitBaseOffset = !!options.omitBaseOffset;
   const hasCyl = generateBaseInput.checked;
   const hasStl = !!uploadedBaseSourceGeometry;
@@ -1778,7 +1774,7 @@ function captureState() {
   return {
     lang: currentLang,
     theme: document.body.dataset.theme || "dark",
-    sidebarSide: "right",
+    sidebarSide: "left",
     size: sizeInput.value,
     thickness: thicknessInput.value,
     scaleX: scaleXInput.value,
@@ -1871,6 +1867,7 @@ function applyState(state) {
   if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = state.baseTextureMarkShape ?? "circle";
   if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = state.baseTextureMarkSize ?? "0.65";
   if (baseTextureStrengthInput) baseTextureStrengthInput.value = state.baseTextureStrength ?? "0.75";
+  ensureForgeBaseEnabled();
   refreshBaseTextureControlsVisibility();
   refreshForgeMarkShapeVisibility();
   if ([state.emblemRotX, state.emblemRotY, state.emblemRotZ].every((v) => typeof v === "number") && Number.isFinite(state.emblemRotX)) {
