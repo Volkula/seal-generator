@@ -101,8 +101,10 @@ function sampleKnurlInfluence(x, y, ctx, settings) {
   const py = (y - ctx.cyMid) / s + 0.25;
   const u = px + py;
   const v = px - py;
-  const diamond = Math.abs(Math.sin(u * Math.PI)) * Math.abs(Math.sin(v * Math.PI));
-  return diamond * rimEdgeFactor(x, y, ctx);
+  const diamond =
+    Math.abs(Math.sin(u * Math.PI)) * Math.abs(Math.sin(v * Math.PI));
+  const softened = Math.pow(clampNumber(diamond, 0, 1), 0.82);
+  return softened * rimEdgeFactor(x, y, ctx);
 }
 
 function sampleRollInfluence(x, y, ctx, settings) {
@@ -186,71 +188,72 @@ function sampleForgeInfluenceAt(x, y, ctx, settings) {
   return clampNumber(raw + grain * settings.strength, 0, 1);
 }
 
+export function computeForgeGridResolution(diameter, frequency) {
+  const byDiameter = Math.round(diameter * 5);
+  const byFrequency = Math.round(frequency * 32);
+  return clampNumber(Math.max(byDiameter, byFrequency, 220), 220, 512);
+}
+
 /**
- * Disk with a dense top grid so forge patterns sample correctly (not just rim verts).
+ * Disk with a smooth polar top grid so forge patterns are not blocky/pixelated.
  */
-export function makeForgeDiskGeometry(diameter, thickness, gridRes = 96) {
+export function makeForgeDiskGeometry(diameter, thickness, radialSegs = 256) {
   const radius = diameter / 2;
+  const nRad = clampNumber(Math.round(radialSegs), 128, 512);
+  const ringSegs = clampNumber(Math.round(nRad * 0.42), 64, 220);
   const positions = [];
   const indices = [];
-  const n = Math.max(32, gridRes);
-  const vertMap = new Int32Array((n + 1) * (n + 1)).fill(-1);
-  const vidx = (ix, iy) => iy * (n + 1) + ix;
+  const ringStart = [0];
 
-  for (let iy = 0; iy <= n; iy++) {
-    for (let ix = 0; ix <= n; ix++) {
-      const x = (ix / n) * 2 * radius - radius;
-      const y = (iy / n) * 2 * radius - radius;
-      if (x * x + y * y > radius * radius) continue;
-      vertMap[vidx(ix, iy)] = positions.length / 3;
-      positions.push(x, y, 0);
+  positions.push(0, 0, 0);
+  for (let ring = 1; ring <= ringSegs; ring++) {
+    ringStart.push(positions.length / 3);
+    const r = (ring / ringSegs) * radius;
+    for (let i = 0; i < nRad; i++) {
+      const a = (i / nRad) * Math.PI * 2;
+      positions.push(Math.cos(a) * r, Math.sin(a) * r, 0);
     }
   }
 
-  for (let iy = 0; iy < n; iy++) {
-    for (let ix = 0; ix < n; ix++) {
-      const a = vertMap[vidx(ix, iy)];
-      const b = vertMap[vidx(ix + 1, iy)];
-      const c = vertMap[vidx(ix + 1, iy + 1)];
-      const d = vertMap[vidx(ix, iy + 1)];
-      if (a >= 0 && b >= 0 && c >= 0) indices.push(a, b, c);
-      if (a >= 0 && c >= 0 && d >= 0) indices.push(a, c, d);
+  for (let i = 0; i < nRad; i++) {
+    const next = (i + 1) % nRad;
+    indices.push(0, ringStart[1] + i, ringStart[1] + next);
+  }
+
+  for (let ring = 1; ring < ringSegs; ring++) {
+    for (let i = 0; i < nRad; i++) {
+      const next = (i + 1) % nRad;
+      const a = ringStart[ring] + i;
+      const b = ringStart[ring] + next;
+      const c = ringStart[ring + 1] + next;
+      const d = ringStart[ring + 1] + i;
+      indices.push(a, b, c);
+      indices.push(a, c, d);
     }
   }
 
-  const rimTop = [];
-  const rimBottom = [];
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i];
-    const y = positions[i + 1];
-    const r = Math.hypot(x, y);
-    if (r < radius * 0.985) continue;
-    rimTop.push({ idx: i / 3, angle: Math.atan2(y, x) });
+  const rimTopStart = ringStart[ringSegs];
+  const rimBottomStart = positions.length / 3;
+  for (let i = 0; i < nRad; i++) {
+    const ix = rimTopStart + i;
+    positions.push(positions[ix * 3], positions[ix * 3 + 1], -thickness);
   }
-  rimTop.sort((a, b) => a.angle - b.angle);
-  for (const rim of rimTop) {
-    const x = positions[rim.idx * 3];
-    const y = positions[rim.idx * 3 + 1];
-    positions.push(x, y, -thickness);
-    rimBottom.push(positions.length / 3 - 1);
-  }
-  const rimTopIdx = rimTop.map((r) => r.idx);
 
-  for (let i = 0; i < rimTopIdx.length; i++) {
-    const next = (i + 1) % rimTopIdx.length;
-    const a = rimTopIdx[i];
-    const b = rimTopIdx[next];
-    const c = rimBottom[next];
-    const d = rimBottom[i];
+  for (let i = 0; i < nRad; i++) {
+    const next = (i + 1) % nRad;
+    const a = rimTopStart + i;
+    const b = rimTopStart + next;
+    const c = rimBottomStart + next;
+    const d = rimBottomStart + i;
     indices.push(a, b, c);
     indices.push(a, c, d);
   }
 
-  const bottomCenterIdx = positions.length / 3;
+  const bottomCenter = positions.length / 3;
   positions.push(0, 0, -thickness);
-  for (let i = 0; i < rimBottom.length; i++) {
-    const next = (i + 1) % rimBottom.length;
-    indices.push(bottomCenterIdx, rimBottom[i], rimBottom[next]);
+  for (let i = 0; i < nRad; i++) {
+    const next = (i + 1) % nRad;
+    indices.push(bottomCenter, rimBottomStart + i, rimBottomStart + next);
   }
 
   const geometry = new THREE.BufferGeometry();
