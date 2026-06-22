@@ -535,13 +535,13 @@ transformControls.addEventListener("dragging-changed", (event) => {
   controls.enabled = !event.value;
   const o = transformControls.object;
   if (event.value) {
-    if (o === currentBaseMesh) _gizmoDragStartBasePos.copy(o.position);
+    if (isBaseGizmoObject(o)) _gizmoDragStartBasePos.copy(o.position);
     if (currentInversePreviewMesh) _gizmoDragStartInversePreviewPos.copy(currentInversePreviewMesh.position);
   } else if (
     inverseModeInput.checked &&
     currentMesh &&
     currentBaseMesh &&
-    (o === currentMesh || o === currentBaseMesh)
+    (o === currentMesh || isBaseGizmoObject(o))
   ) {
     if (inverseCombinedRafId) {
       cancelAnimationFrame(inverseCombinedRafId);
@@ -553,7 +553,7 @@ transformControls.addEventListener("dragging-changed", (event) => {
 transformControls.addEventListener("objectChange", () => {
   const obj = transformControls.object;
   if (!obj) return;
-  if (obj === currentBaseMesh) {
+  if (isBaseGizmoObject(obj)) {
     baseOffsetXInput.value = `${obj.position.x.toFixed(1)}`;
     baseOffsetYInput.value = `${obj.position.y.toFixed(1)}`;
     baseOffsetZInput.value = `${obj.position.z.toFixed(1)}`;
@@ -756,6 +756,24 @@ function getCurrentStlAddonMesh() {
     if (child.isMesh && child.userData?.role === "stlAddon") found = child;
   });
   return found;
+}
+
+function getCurrentDiskMesh() {
+  if (!currentBaseMesh) return null;
+  let found = null;
+  currentBaseMesh.traverse((child) => {
+    if (child.isMesh && child.userData?.role === "cyl") found = child;
+  });
+  return found;
+}
+
+/** Disk when present; otherwise the composed base root (STL-only layout). */
+function getBaseGizmoTarget() {
+  return getCurrentDiskMesh() || currentBaseMesh;
+}
+
+function isBaseGizmoObject(obj) {
+  return !!obj && (obj.userData?.role === "cyl" || obj === currentBaseMesh);
 }
 
 function isStlAddonObject(obj) {
@@ -1651,7 +1669,7 @@ function flattenObject3DSubsetToSingleMesh(sourceRoot, includeFn, materialFallba
 
 /**
  * Compose scene base root: disk (optional) + extra STL under it (optional). Both can coexist.
- * Applies base offset sliders on returned Group root.
+ * Base offset sliders / base gizmo apply to the disk only; STL add-on stays independent.
  */
 function buildComposableBaseRoot(options = {}, forExport = false) {
   ensureForgeBaseEnabled();
@@ -1669,6 +1687,13 @@ function buildComposableBaseRoot(options = {}, forExport = false) {
     const smoothForCSG = !!options.smoothForCSG && isBaseTextureActive();
     cyl = makeGeneratedBaseMesh(forExport, { skipForge: smoothForCSG });
     cyl.userData.role = "cyl";
+    if (!omitBaseOffset) {
+      cyl.position.set(
+        Number(baseOffsetXInput.value),
+        Number(baseOffsetYInput.value),
+        Number(baseOffsetZInput.value)
+      );
+    }
     group.add(cyl);
   }
   if (hasStl) {
@@ -1692,11 +1717,7 @@ function buildComposableBaseRoot(options = {}, forExport = false) {
     stl.position.set(ox, oy, stackZ + oz);
     group.add(stl);
   }
-  if (omitBaseOffset) {
-    group.position.set(0, 0, 0);
-  } else {
-    group.position.set(Number(baseOffsetXInput.value), Number(baseOffsetYInput.value), Number(baseOffsetZInput.value));
-  }
+  group.position.set(0, 0, 0);
   group.updateMatrixWorld(true);
   return group;
 }
@@ -1838,7 +1859,7 @@ function updateGizmoTarget() {
   selectedObjectType = targetKind;
   updateSelectedObjectUI();
   let target = null;
-  if (targetKind === "base") target = currentBaseMesh;
+  if (targetKind === "base") target = getBaseGizmoTarget();
   else if (targetKind === "stlAddon") target = getCurrentStlAddonMesh();
   else target = currentMesh;
   if (currentMesh) {
@@ -2468,6 +2489,7 @@ const ndc = new THREE.Vector2();
 function isUnderBasePickRoot(obj) {
   let n = obj;
   while (n) {
+    if (n.isMesh && n.userData?.role === "stlAddon") return false;
     if (n === currentBaseMesh || n === currentInversePreviewMesh) return true;
     n = n.parent;
   }
