@@ -86,6 +86,8 @@ const stlAddonOffsetZValueInput = document.getElementById("stlAddonOffsetZValue"
 const stlAddonScaleInput = document.getElementById("stlAddonScale");
 const stlAddonScaleValueInput = document.getElementById("stlAddonScaleValue");
 const stlAddonTransformWrap = document.getElementById("stlAddonTransformWrap");
+const stlAddonOffsetGroup = document.getElementById("stlAddonOffsetGroup");
+const stlAddonGizmoHint = document.getElementById("stlAddonGizmoHint");
 const baseTextureEnabledInput = document.getElementById("baseTextureEnabled");
 const baseTextureControls = document.getElementById("baseTextureControls");
 const baseTexturePresetInput = document.getElementById("baseTexturePreset");
@@ -203,6 +205,9 @@ const lastEmblemCanonicalPosition = new THREE.Vector3();
 /** Persisted emblem rotation/scale from gizmo across rebuild(buildMesh resets mesh). */
 const emblemGizmoEuler = new THREE.Euler(0, 0, 0, "XYZ");
 const emblemGizmoScale = new THREE.Vector3(1, 1, 1);
+const stlAddonGizmoEuler = new THREE.Euler(0, 0, 0, "XYZ");
+const stlAddonGizmoScale = new THREE.Vector3(1, 1, 1);
+const lastStlAddonCanonicalPosition = new THREE.Vector3();
 let inverseCombinedRafId = 0;
 /** Low-density emblem geometry for inverse-mode CSG preview only; export uses full-density `currentMesh`. */
 let inversePreviewCutterMesh = null;
@@ -289,6 +294,8 @@ const i18n = {
     wireframeMode: "Wireframe preview",
     gizmoEnabled: "Enable gizmo",
     gizmoTarget: "Gizmo target",
+    gizmoTargetStlAddon: "Add-on STL",
+    stlAddonGizmoHint: "Gizmo: translate / rotate / scale (cycle with Gizmo button).",
     gizmoMode: "Gizmo",
     gizmoTranslate: "Translate",
     gizmoRotate: "Rotate",
@@ -328,6 +335,7 @@ const i18n = {
     selectedPrefix: "Selected",
     objectEmblem: "Emblem",
     objectBase: "Base",
+    objectStlAddon: "Add-on STL",
     flatView: "Flat View",
     perspectiveView: "3D View",
     statusIdle: "Load an SVG to start.",
@@ -422,6 +430,8 @@ const i18n = {
     wireframeMode: "Wireframe-предпросмотр",
     gizmoEnabled: "Включить гизмо",
     gizmoTarget: "Цель гизмо",
+    gizmoTargetStlAddon: "Доп. STL",
+    stlAddonGizmoHint: "Гизмо: перемещение / поворот / масштаб (кнопка Gizmo).",
     gizmoMode: "Гизмо",
     gizmoTranslate: "Перемещение",
     gizmoRotate: "Поворот",
@@ -461,6 +471,7 @@ const i18n = {
     selectedPrefix: "Выбрано",
     objectEmblem: "Эмблема",
     objectBase: "Основание",
+    objectStlAddon: "Доп. STL",
     flatView: "Плоский вид",
     perspectiveView: "3D вид",
     statusIdle: "Загрузите SVG для начала.",
@@ -563,6 +574,32 @@ transformControls.addEventListener("objectChange", () => {
       emblemOffsetXInput.value = `${ux.toFixed(1)}`;
       emblemOffsetYInput.value = `${uy.toFixed(1)}`;
       emblemOffsetZInput.value = `${uz.toFixed(1)}`;
+    }
+  } else if (obj.userData?.role === "stlAddon") {
+    stlAddonGizmoEuler.copy(obj.rotation);
+    stlAddonGizmoScale.copy(obj.scale);
+    if (transformControls.mode === "translate") {
+      const ux = clampNumber(
+        obj.position.x - lastStlAddonCanonicalPosition.x,
+        -STL_ADDON_OFFSET_MM,
+        STL_ADDON_OFFSET_MM
+      );
+      const uy = clampNumber(
+        obj.position.y - lastStlAddonCanonicalPosition.y,
+        -STL_ADDON_OFFSET_MM,
+        STL_ADDON_OFFSET_MM
+      );
+      const uz = clampNumber(
+        obj.position.z - lastStlAddonCanonicalPosition.z,
+        -STL_ADDON_OFFSET_MM,
+        STL_ADDON_OFFSET_MM
+      );
+      stlAddonOffsetXInput.value = `${ux.toFixed(1)}`;
+      stlAddonOffsetYInput.value = `${uy.toFixed(1)}`;
+      stlAddonOffsetZInput.value = `${uz.toFixed(1)}`;
+    } else if (transformControls.mode === "scale") {
+      const avg = (obj.scale.x + obj.scale.y + obj.scale.z) / 3;
+      stlAddonScaleInput.value = `${clampNumber(avg, 0.05, 5).toFixed(2)}`;
     }
   }
   refreshOutputs();
@@ -703,10 +740,44 @@ function sameSignature(a, b) {
 }
 
 function updateSelectedObjectUI() {
-  const isBase = selectedObjectType === "base";
-  baseOffsetGroup.style.display = isBase ? "block" : "none";
-  emblemOffsetGroup.style.display = isBase ? "none" : "block";
-  selectedObjectLabel.textContent = `${t("selectedPrefix")}: ${isBase ? t("objectBase") : t("objectEmblem")}`;
+  const type = selectedObjectType;
+  baseOffsetGroup.style.display = type === "base" ? "block" : "none";
+  emblemOffsetGroup.style.display = type === "emblem" ? "block" : "none";
+  if (stlAddonOffsetGroup) stlAddonOffsetGroup.style.display = type === "stlAddon" ? "block" : "none";
+  const labelKey =
+    type === "base" ? "objectBase" : type === "stlAddon" ? "objectStlAddon" : "objectEmblem";
+  selectedObjectLabel.textContent = `${t("selectedPrefix")}: ${t(labelKey)}`;
+}
+
+function getCurrentStlAddonMesh() {
+  if (!currentBaseMesh) return null;
+  let found = null;
+  currentBaseMesh.traverse((child) => {
+    if (child.isMesh && child.userData?.role === "stlAddon") found = child;
+  });
+  return found;
+}
+
+function isStlAddonObject(obj) {
+  let n = obj;
+  while (n) {
+    if (n.isMesh && n.userData?.role === "stlAddon") return true;
+    if (n === currentBaseMesh || n === currentInversePreviewMesh) return false;
+    n = n.parent;
+  }
+  return false;
+}
+
+function refreshGizmoTargetOptions() {
+  const opt = gizmoTargetInput?.querySelector?.('option[value="stlAddon"]');
+  if (!opt) return;
+  const on = !!uploadedBaseSourceGeometry;
+  opt.hidden = !on;
+  opt.disabled = !on;
+  if (!on && gizmoTargetInput.value === "stlAddon") {
+    gizmoTargetInput.value = "emblem";
+    updateGizmoTarget();
+  }
 }
 
 function t(key) {
@@ -935,7 +1006,12 @@ function updateBaseStlSelectionUI() {
   if (stlLibrarySelect && baseStlLibraryPath) {
     stlLibrarySelect.value = baseStlLibraryPath;
   }
-  if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseSourceGeometry;
+  refreshGizmoTargetOptions();
+}
+
+function syncStlAddonUniformScaleFromSlider() {
+  const s = clampNumber(Number(stlAddonScaleInput?.value ?? 1), 0.05, 5);
+  stlAddonGizmoScale.set(s, s, s);
 }
 
 function normalizeBaseStlGeometry(geometry) {
@@ -953,9 +1029,16 @@ function clearBaseStlAddon() {
   uploadedBaseSourceGeometry = null;
   baseStlLibraryPath = "";
   baseStlSourceName = "";
+  stlAddonGizmoEuler.set(0, 0, 0, "XYZ");
+  stlAddonGizmoScale.set(1, 1, 1);
+  stlAddonOffsetXInput.value = "0";
+  stlAddonOffsetYInput.value = "0";
+  stlAddonOffsetZInput.value = "0";
+  stlAddonScaleInput.value = "1";
   if (baseStlFileInput) baseStlFileInput.value = "";
   if (stlLibrarySelect) stlLibrarySelect.value = "";
   if (baseStlClearBtn) baseStlClearBtn.disabled = true;
+  if (gizmoTargetInput?.value === "stlAddon") gizmoTargetInput.value = "emblem";
   updateBaseStlSelectionUI();
 }
 
@@ -966,6 +1049,7 @@ function setBaseStlGeometry(geometry, meta = {}) {
   baseStlSourceName = meta.name ?? "";
   if (baseStlClearBtn) baseStlClearBtn.disabled = false;
   if (stlLibrarySelect && baseStlLibraryPath) stlLibrarySelect.value = baseStlLibraryPath;
+  gizmoTargetInput.value = "stlAddon";
   updateBaseStlSelectionUI();
 }
 
@@ -1249,6 +1333,9 @@ function applyLocale() {
   document.getElementById("wireframeModeLabel").textContent = t("wireframeMode");
   document.getElementById("gizmoEnabledLabel").textContent = t("gizmoEnabled");
   document.getElementById("gizmoTargetLabel").textContent = t("gizmoTarget");
+  const gizmoStlOpt = gizmoTargetInput?.querySelector?.('option[value="stlAddon"]');
+  if (gizmoStlOpt) gizmoStlOpt.textContent = t("gizmoTargetStlAddon");
+  if (stlAddonGizmoHint) stlAddonGizmoHint.textContent = t("stlAddonGizmoHint");
   updateGizmoModeButtonLabel();
   document.getElementById("exportBtn").textContent = t("export");
   document.getElementById("exportCombinedBtn").textContent = t("exportCombined");
@@ -1589,20 +1676,20 @@ function buildComposableBaseRoot(options = {}, forExport = false) {
     stl = new THREE.Mesh(geom, createBaseMaterial());
     stl.userData.role = "stlAddon";
     applyMeshPreviewFlags(stl);
-    const s = clampNumber(Number(stlAddonScaleInput.value ?? 1), 0.05, 5);
-    stl.scale.set(s, s, s);
+    stl.rotation.copy(stlAddonGizmoEuler);
+    stl.scale.copy(stlAddonGizmoScale);
     stl.updateMatrixWorld(true);
+    let stackZ = 0;
     if (hasCyl) {
       const cyBox = new THREE.Box3().setFromObject(cyl);
       const stBox = new THREE.Box3().setFromObject(stl);
-      stl.position.z = cyBox.min.z - stBox.max.z;
+      stackZ = cyBox.min.z - stBox.max.z;
     }
+    lastStlAddonCanonicalPosition.set(0, 0, stackZ);
     const ox = clampNumber(Number(stlAddonOffsetXInput.value ?? 0), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
     const oy = clampNumber(Number(stlAddonOffsetYInput.value ?? 0), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
     const oz = clampNumber(Number(stlAddonOffsetZInput.value ?? 0), -STL_ADDON_OFFSET_MM, STL_ADDON_OFFSET_MM);
-    stl.position.x += ox;
-    stl.position.y += oy;
-    stl.position.z += oz;
+    stl.position.set(ox, oy, stackZ + oz);
     group.add(stl);
   }
   if (omitBaseOffset) {
@@ -1745,15 +1832,15 @@ function updateGizmoTarget() {
     transformControls.visible = false;
     return;
   }
-  selectedObjectType = gizmoTargetInput.value === "base" ? "base" : "emblem";
+  refreshGizmoTargetOptions();
+  let targetKind = gizmoTargetInput.value;
+  if (targetKind === "stlAddon" && !getCurrentStlAddonMesh()) targetKind = "emblem";
+  selectedObjectType = targetKind;
   updateSelectedObjectUI();
-  const isBaseTarget = gizmoTargetInput.value === "base";
-  /** Always manipulate the composed base group; inverse CSG preview is display-only for export/visual. */
-  const baseTarget = currentBaseMesh;
-  const target = isBaseTarget ? baseTarget : currentMesh;
-  // Inverse mode: keep the translucent emblem-cutter visible all the time so the user can see
-  // where the cut sits even when the gizmo target is the base. depthWrite is off on the cutter
-  // material, so it doesn't occlude the CSG result drawn behind it.
+  let target = null;
+  if (targetKind === "base") target = currentBaseMesh;
+  else if (targetKind === "stlAddon") target = getCurrentStlAddonMesh();
+  else target = currentMesh;
   if (currentMesh) {
     currentMesh.visible = true;
   }
@@ -2182,6 +2269,12 @@ function captureState() {
     baseTextureReverse: baseTextureReverseInput?.checked ?? false,
     baseTextureRandomness: baseTextureRandomnessInput?.value ?? "0.35",
     baseStlLibraryPath,
+    stlAddonRotX: stlAddonGizmoEuler.x,
+    stlAddonRotY: stlAddonGizmoEuler.y,
+    stlAddonRotZ: stlAddonGizmoEuler.z,
+    stlAddonScaleX: stlAddonGizmoScale.x,
+    stlAddonScaleY: stlAddonGizmoScale.y,
+    stlAddonScaleZ: stlAddonGizmoScale.z,
     emblemRotX: emblemGizmoEuler.x,
     emblemRotY: emblemGizmoEuler.y,
     emblemRotZ: emblemGizmoEuler.z,
@@ -2258,6 +2351,16 @@ function applyState(state) {
     [state.emblemScaleX, state.emblemScaleY, state.emblemScaleZ].every((v) => typeof v === "number" && Number.isFinite(v))
   ) {
     emblemGizmoScale.set(state.emblemScaleX, state.emblemScaleY, state.emblemScaleZ);
+  }
+  if ([state.stlAddonRotX, state.stlAddonRotY, state.stlAddonRotZ].every((v) => typeof v === "number") && Number.isFinite(state.stlAddonRotX)) {
+    stlAddonGizmoEuler.set(state.stlAddonRotX, state.stlAddonRotY, state.stlAddonRotZ, "XYZ");
+  }
+  if (
+    [state.stlAddonScaleX, state.stlAddonScaleY, state.stlAddonScaleZ].every((v) => typeof v === "number" && Number.isFinite(v))
+  ) {
+    stlAddonGizmoScale.set(state.stlAddonScaleX, state.stlAddonScaleY, state.stlAddonScaleZ);
+  } else {
+    syncStlAddonUniformScaleFromSlider();
   }
   svgText = state.svgText ?? svgText;
   svgName = state.svgName ?? svgName;
@@ -2381,8 +2484,13 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   const candidates = [currentMesh, currentBaseMesh, currentInversePreviewMesh].filter(Boolean);
   const hit = raycaster.intersectObjects(candidates, true)[0];
   if (!hit?.object) return;
-  const pickedBase = isUnderBasePickRoot(hit.object);
-  gizmoTargetInput.value = pickedBase ? "base" : "emblem";
+  if (isStlAddonObject(hit.object) && getCurrentStlAddonMesh()) {
+    gizmoTargetInput.value = "stlAddon";
+  } else if (isUnderBasePickRoot(hit.object)) {
+    gizmoTargetInput.value = "base";
+  } else {
+    gizmoTargetInput.value = "emblem";
+  }
   updateGizmoTarget();
 });
 
@@ -2526,7 +2634,6 @@ function refreshOutputs() {
   if (baseTextureStrengthValueInput) baseTextureStrengthValueInput.value = `${Number(baseTextureStrengthInput.value).toFixed(2)}`;
   if (baseTextureRandomnessValueInput) baseTextureRandomnessValueInput.value = `${Number(baseTextureRandomnessInput.value).toFixed(2)}`;
   refreshBaseTextureControlsVisibility();
-  if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseSourceGeometry;
   updateBaseStlSelectionUI();
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
@@ -2701,6 +2808,7 @@ for (const input of [sizeInput, thicknessInput, scaleXInput, scaleYInput, scaleZ
 for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, stlAddonOffsetXInput, stlAddonOffsetYInput, stlAddonOffsetZInput, stlAddonScaleInput, baseTextureEnabledInput, baseTexturePresetInput, baseTextureFrequencyInput, baseTextureMarkShapeInput, baseTextureMarkSizeInput, baseTextureStrengthInput, baseTextureReverseInput, baseTextureRandomnessInput]) {
   if (!input) continue;
   input.addEventListener("input", () => {
+    if (input === stlAddonScaleInput) syncStlAddonUniformScaleFromSlider();
     if (input === baseTextureEnabledInput) {
       ensureForgeBaseEnabled();
       refreshBaseTextureControlsVisibility();
@@ -2709,6 +2817,7 @@ for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, s
     rebuild();
   });
   input.addEventListener("change", () => {
+    if (input === stlAddonScaleInput) syncStlAddonUniformScaleFromSlider();
     if (input === baseTextureEnabledInput) {
       ensureForgeBaseEnabled();
       refreshBaseTextureControlsVisibility();
