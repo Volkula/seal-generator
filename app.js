@@ -125,7 +125,7 @@ let svgName = "model";
 let currentMesh = null;
 let currentBaseMesh = null;
 let currentInversePreviewMesh = null;
-let uploadedBaseMesh = null;
+let uploadedBaseSourceGeometry = null;
 let currentLang = "en";
 let uploadedFiles = [];
 let batchFiles = [];
@@ -203,17 +203,17 @@ const i18n = {
     stlAddonScale: "Add-on STL scale",
     baseDiameter: "Base diameter (mm)",
     baseThickness: "Base thickness (mm)",
-    baseTextureEnabled: "Procedural base texture",
-    baseTexturePreset: "Texture preset",
+    baseTextureEnabled: "Surface forging (dents)",
+    baseTexturePreset: "Forge preset",
     baseTexturePresetForged: "Forged metal",
-    baseTextureFrequency: "Texture frequency",
+    baseTextureFrequency: "Pattern frequency",
     baseTextureMarkShape: "Mark shape",
     baseTextureMarkCircle: "Round hammer",
     baseTextureMarkOval: "Oval strike",
     baseTextureMarkStrike: "Linear brush",
     baseTextureMarkCross: "Cross forge",
     baseTextureMarkSize: "Mark size",
-    baseTextureStrength: "Texture strength",
+    baseTextureStrength: "Dent depth",
     size: "Size (max dimension, mm)",
     thickness: "Thickness (mm)",
     scaleX: "Scale X",
@@ -312,17 +312,17 @@ const i18n = {
     stlAddonScale: "Масштаб STL доп.",
     baseDiameter: "Диаметр основания (мм)",
     baseThickness: "Толщина основания (мм)",
-    baseTextureEnabled: "Процедурная текстура основания",
-    baseTexturePreset: "Пресет текстуры",
+    baseTextureEnabled: "Ковка поверхности (вмятины)",
+    baseTexturePreset: "Пресет ковки",
     baseTexturePresetForged: "Кованый металл",
-    baseTextureFrequency: "Частота текстуры",
+    baseTextureFrequency: "Частота узора",
     baseTextureMarkShape: "Форма следов",
     baseTextureMarkCircle: "Круглый удар",
     baseTextureMarkOval: "Овальный след",
     baseTextureMarkStrike: "Линейная кисть",
     baseTextureMarkCross: "Крестовая ковка",
     baseTextureMarkSize: "Размер следов",
-    baseTextureStrength: "Сила текстуры",
+    baseTextureStrength: "Глубина вмятин",
     size: "Размер (макс. габарит, мм)",
     thickness: "Толщина (мм)",
     scaleX: "Масштаб X",
@@ -984,15 +984,6 @@ function resetAxisConstraint() {
   transformControls.showZ = true;
 }
 
-/** Cached procedural maps for the active base-texture settings. */
-let baseTextureCache = { key: "", colorMap: null, roughnessMap: null };
-
-function disposeBaseTextureCache() {
-  baseTextureCache.colorMap?.dispose?.();
-  baseTextureCache.roughnessMap?.dispose?.();
-  baseTextureCache = { key: "", colorMap: null, roughnessMap: null };
-}
-
 function isBaseTextureActive() {
   return !!baseTextureEnabledInput?.checked;
 }
@@ -1007,10 +998,6 @@ function getBaseTextureSettings() {
   };
 }
 
-function baseTextureCacheKey(settings) {
-  return `${settings.preset}|${settings.frequency}|${settings.markShape}|${settings.markSize}|${settings.strength}`;
-}
-
 /** Deterministic pseudo-random in [0, 1) from integer cell coordinates. */
 function forgedCellRand(ix, iy, salt = 0) {
   let h = (ix * 374761393 + iy * 668265263 + salt * 982451653) | 0;
@@ -1020,173 +1007,123 @@ function forgedCellRand(ix, iy, salt = 0) {
   return h / 4294967296;
 }
 
-function drawForgedMark(ctx, cx, cy, cell, shape, markSize, angle, strength) {
+function forgeSmoothFalloff(t) {
+  const x = clampNumber(t, 0, 1);
+  return x * x * (3 - 2 * x);
+}
+
+function forgeEllipticalInfluence(lx, ly, rx, ry) {
+  const nx = lx / rx;
+  const ny = ly / ry;
+  const d = nx * nx + ny * ny;
+  if (d >= 1) return 0;
+  return forgeSmoothFalloff(1 - d);
+}
+
+function forgeMarkInfluenceAt(x, y, mark, cell, markShape, markSize) {
+  const dx = x - mark.cx;
+  const dy = y - mark.cy;
+  const cos = Math.cos(-mark.angle);
+  const sin = Math.sin(-mark.angle);
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
   const baseR = cell * markSize * 0.42;
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(angle);
-  ctx.globalCompositeOperation = "multiply";
-
-  const drawSoftBlob = (rx, ry, alpha) => {
-    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(rx, ry));
-    g.addColorStop(0, `rgba(48, 44, 40, ${alpha * strength})`);
-    g.addColorStop(0.55, `rgba(88, 82, 74, ${alpha * strength * 0.55})`);
-    g.addColorStop(1, "rgba(255, 255, 255, 0)");
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-  };
-
-  switch (shape) {
+  switch (markShape) {
     case "oval":
-      drawSoftBlob(baseR * 1.55, baseR * 0.55, 0.95);
-      break;
-    case "strike": {
-      const lg = ctx.createLinearGradient(-baseR * 1.8, 0, baseR * 1.8, 0);
-      lg.addColorStop(0, "rgba(255,255,255,0)");
-      lg.addColorStop(0.35, `rgba(70, 64, 58, ${0.55 * strength})`);
-      lg.addColorStop(0.5, `rgba(42, 38, 34, ${0.9 * strength})`);
-      lg.addColorStop(0.65, `rgba(70, 64, 58, ${0.55 * strength})`);
-      lg.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = lg;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, baseR * 1.85, baseR * 0.28, 0, 0, Math.PI * 2);
-      ctx.fill();
-      break;
-    }
+      return forgeEllipticalInfluence(lx, ly, baseR * 1.55, baseR * 0.55);
+    case "strike":
+      return forgeEllipticalInfluence(lx, ly, baseR * 1.85, baseR * 0.28);
     case "cross":
-      drawSoftBlob(baseR * 0.42, baseR * 1.35, 0.85);
-      ctx.rotate(Math.PI / 2);
-      drawSoftBlob(baseR * 0.42, baseR * 1.35, 0.85);
-      break;
+      return Math.max(
+        forgeEllipticalInfluence(lx, ly, baseR * 0.42, baseR * 1.35),
+        forgeEllipticalInfluence(ly, -lx, baseR * 0.42, baseR * 1.35)
+      );
     case "circle":
     default:
-      drawSoftBlob(baseR, baseR, 0.9);
-      break;
+      return forgeEllipticalInfluence(lx, ly, baseR, baseR);
   }
-
-  ctx.restore();
 }
 
-function generateForgedMetalMaps(settings) {
-  const size = 512;
-  const colorCanvas = document.createElement("canvas");
-  colorCanvas.width = size;
-  colorCanvas.height = size;
-  const colorCtx = colorCanvas.getContext("2d");
-  const roughCanvas = document.createElement("canvas");
-  roughCanvas.width = size;
-  roughCanvas.height = size;
-  const roughCtx = roughCanvas.getContext("2d");
-
-  const base = colorCtx.createLinearGradient(0, 0, size, size);
-  base.addColorStop(0, "#9a9590");
-  base.addColorStop(0.5, "#86817c");
-  base.addColorStop(1, "#74706b");
-  colorCtx.fillStyle = base;
-  colorCtx.fillRect(0, 0, size, size);
-
-  roughCtx.fillStyle = "#b8b0a8";
-  roughCtx.fillRect(0, 0, size, size);
-
-  const cells = settings.frequency;
-  const cell = size / cells;
-  for (let iy = 0; iy < cells; iy++) {
-    for (let ix = 0; ix < cells; ix++) {
-      const jitterX = (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.55;
-      const jitterY = (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.55;
-      const cx = ix * cell + cell * 0.5 + jitterX;
-      const cy = iy * cell + cell * 0.5 + jitterY;
-      const angle = forgedCellRand(ix, iy, 3) * Math.PI;
-      const skip = forgedCellRand(ix, iy, 4);
-      if (skip > 0.93) continue;
-      drawForgedMark(colorCtx, cx, cy, cell, settings.markShape, settings.markSize, angle, settings.strength);
-      drawForgedMark(roughCtx, cx, cy, cell, settings.markShape, settings.markSize * 0.95, angle, settings.strength);
+function generateForgeMarks(settings, box) {
+  const span = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, 1);
+  const cell = span / settings.frequency;
+  const marks = [];
+  const ix0 = Math.floor((box.min.x - cell * 0.5) / cell);
+  const ix1 = Math.ceil((box.max.x + cell * 0.5) / cell);
+  const iy0 = Math.floor((box.min.y - cell * 0.5) / cell);
+  const iy1 = Math.ceil((box.max.y + cell * 0.5) / cell);
+  for (let iy = iy0; iy <= iy1; iy++) {
+    for (let ix = ix0; ix <= ix1; ix++) {
+      if (forgedCellRand(ix, iy, 4) > 0.93) continue;
+      marks.push({
+        cx: ix * cell + cell * 0.5 + (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.55,
+        cy: iy * cell + cell * 0.5 + (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.55,
+        angle: forgedCellRand(ix, iy, 3) * Math.PI,
+      });
     }
   }
-
-  // Fine grain noise for brushed metal feel.
-  const noise = colorCtx.getImageData(0, 0, size, size);
-  const roughNoise = roughCtx.getImageData(0, 0, size, size);
-  for (let i = 0; i < noise.data.length; i += 4) {
-    const n = (forgedCellRand(i, i >> 2, 7) - 0.5) * 18 * settings.strength;
-    noise.data[i] = clampNumber(noise.data[i] + n, 0, 255);
-    noise.data[i + 1] = clampNumber(noise.data[i + 1] + n, 0, 255);
-    noise.data[i + 2] = clampNumber(noise.data[i + 2] + n, 0, 255);
-    const rn = (forgedCellRand(i, i >> 2, 9) - 0.5) * 22 * settings.strength;
-    roughNoise.data[i] = clampNumber(roughNoise.data[i] + rn, 0, 255);
-    roughNoise.data[i + 1] = clampNumber(roughNoise.data[i + 1] + rn, 0, 255);
-    roughNoise.data[i + 2] = clampNumber(roughNoise.data[i + 2] + rn, 0, 255);
-  }
-  colorCtx.putImageData(noise, 0, 0);
-  roughCtx.putImageData(roughNoise, 0, 0);
-
-  const colorMap = new THREE.CanvasTexture(colorCanvas);
-  colorMap.colorSpace = THREE.SRGBColorSpace;
-  colorMap.wrapS = colorMap.wrapT = THREE.RepeatWrapping;
-  colorMap.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy?.() ?? 4);
-
-  const roughnessMap = new THREE.CanvasTexture(roughCanvas);
-  roughnessMap.wrapS = roughnessMap.wrapT = THREE.RepeatWrapping;
-  roughnessMap.anisotropy = colorMap.anisotropy;
-
-  return { colorMap, roughnessMap };
+  return { marks, cell };
 }
 
-function getBaseProceduralTextures() {
-  if (!isBaseTextureActive()) {
-    disposeBaseTextureCache();
-    return null;
+function sampleForgeInfluenceAt(x, y, marks, settings, cell) {
+  let peak = 0;
+  for (const mark of marks) {
+    peak = Math.max(peak, forgeMarkInfluenceAt(x, y, mark, cell, settings.markShape, settings.markSize));
   }
-  const settings = getBaseTextureSettings();
-  const key = baseTextureCacheKey(settings);
-  if (baseTextureCache.key === key && baseTextureCache.colorMap) return baseTextureCache;
-
-  disposeBaseTextureCache();
-  const maps =
-    settings.preset === "forgedMetal" ? generateForgedMetalMaps(settings) : generateForgedMetalMaps(settings);
-  const repeat = settings.frequency / 6;
-  maps.colorMap.repeat.set(repeat, repeat);
-  maps.roughnessMap.repeat.set(repeat, repeat);
-  maps.colorMap.needsUpdate = true;
-  maps.roughnessMap.needsUpdate = true;
-  baseTextureCache = { key, ...maps };
-  return baseTextureCache;
+  const grain = (forgedCellRand(Math.floor(x * 19), Math.floor(y * 19), 8) - 0.5) * 0.06;
+  return clampNumber(peak + grain * settings.strength, 0, 1);
 }
 
-/** Planar XY UVs for STL bases so procedural textures tile consistently. */
-function applyPlanarUVsToGeometry(geometry) {
+/** Displace upward-facing vertices inward to create real forged dents in the mesh. */
+function applyForgeDisplacement(geometry, settings) {
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
-  const size = new THREE.Vector3();
-  box.getSize(size);
-  const span = Math.max(size.x, size.y, 0.001);
+  const thickness = Math.max(box.max.z - box.min.z, 0.001);
+  const maxDepth = Math.min(thickness * 0.38 * settings.strength, thickness * 0.48);
+  if (maxDepth <= 0.001) return;
+
+  const { marks, cell } = generateForgeMarks(settings, box);
+  if (!marks.length) return;
+
   const pos = geometry.attributes.position;
-  const uv = new Float32Array(pos.count * 2);
+  geometry.computeVertexNormals();
+  const normals = geometry.attributes.normal;
+  const topZ = box.max.z;
+  const topBand = Math.max(thickness * 0.14, 0.06);
+
   for (let i = 0; i < pos.count; i++) {
-    uv[i * 2] = (pos.getX(i) - box.min.x) / span;
-    uv[i * 2 + 1] = (pos.getY(i) - box.min.y) / span;
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const nz = normals.getZ(i);
+    if (z < topZ - topBand || nz < 0.35) continue;
+
+    const depth = sampleForgeInfluenceAt(x, y, marks, settings, cell) * maxDepth;
+    if (depth <= 0.0005) continue;
+
+    const nx = normals.getX(i);
+    const ny = normals.getY(i);
+    pos.setXYZ(i, x - nx * depth, y - ny * depth, z - nz * depth);
   }
-  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-  geometry.attributes.uv.needsUpdate = true;
+  pos.needsUpdate = true;
+  geometry.computeVertexNormals();
+}
+
+function prepareForgeBaseGeometry(sourceGeometry) {
+  const geometry = sourceGeometry.clone();
+  if (isBaseTextureActive()) {
+    applyForgeDisplacement(geometry, getBaseTextureSettings());
+  } else {
+    geometry.computeVertexNormals();
+  }
+  return geometry;
 }
 
 function createBaseMaterial() {
-  const tex = getBaseProceduralTextures();
-  if (!tex) {
-    return new THREE.MeshStandardMaterial({
-      color: 0x8b8b8b,
-      metalness: 0.25,
-      roughness: 0.75,
-    });
-  }
   return new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    metalness: 0.88,
-    roughness: 1,
-    map: tex.colorMap,
-    roughnessMap: tex.roughnessMap,
+    color: 0x8b8b8b,
+    metalness: 0.35,
+    roughness: 0.68,
   });
 }
 
@@ -1198,11 +1135,15 @@ function refreshBaseTextureControlsVisibility() {
 function makeGeneratedBaseMesh() {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
-  const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, 96);
+  const geometry = new THREE.CylinderGeometry(diameter / 2, diameter / 2, thickness, 128, 2);
   // Z is up in this scene, keep top at Z=0.
   geometry.rotateX(Math.PI / 2);
   geometry.translate(0, 0, -thickness / 2);
-  geometry.computeVertexNormals();
+  if (isBaseTextureActive()) {
+    applyForgeDisplacement(geometry, getBaseTextureSettings());
+  } else {
+    geometry.computeVertexNormals();
+  }
   return new THREE.Mesh(geometry, createBaseMaterial());
 }
 
@@ -1278,7 +1219,7 @@ function flattenObject3DSubsetToSingleMesh(sourceRoot, includeFn, materialFallba
 function buildComposableBaseRoot(options = {}) {
   const omitBaseOffset = !!options.omitBaseOffset;
   const hasCyl = generateBaseInput.checked;
-  const hasStl = !!uploadedBaseMesh;
+  const hasStl = !!uploadedBaseSourceGeometry;
   if (!hasCyl && !hasStl) return null;
   const group = new THREE.Group();
   group.name = "composedBase";
@@ -1292,10 +1233,8 @@ function buildComposableBaseRoot(options = {}) {
     group.add(cyl);
   }
   if (hasStl) {
-    if (isBaseTextureActive()) applyPlanarUVsToGeometry(uploadedBaseMesh.geometry);
-    uploadedBaseMesh.material?.dispose?.();
-    uploadedBaseMesh.material = createBaseMaterial();
-    stl = uploadedBaseMesh.clone();
+    const geom = prepareForgeBaseGeometry(uploadedBaseSourceGeometry);
+    stl = new THREE.Mesh(geom, createBaseMaterial());
     stl.userData.role = "stlAddon";
     const s = clampNumber(Number(stlAddonScaleInput.value ?? 1), 0.05, 5);
     stl.scale.set(s, s, s);
@@ -1981,7 +1920,6 @@ function resetSettingsToDefaults() {
   if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = "circle";
   if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = "0.65";
   if (baseTextureStrengthInput) baseTextureStrengthInput.value = "0.75";
-  disposeBaseTextureCache();
   refreshBaseTextureControlsVisibility();
   rebuild();
 }
@@ -2184,7 +2122,7 @@ function refreshOutputs() {
   if (baseTextureMarkSizeValueInput) baseTextureMarkSizeValueInput.value = `${Number(baseTextureMarkSizeInput.value).toFixed(2)}`;
   if (baseTextureStrengthValueInput) baseTextureStrengthValueInput.value = `${Number(baseTextureStrengthInput.value).toFixed(2)}`;
   refreshBaseTextureControlsVisibility();
-  if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseMesh;
+  if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseSourceGeometry;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
 
@@ -2218,7 +2156,7 @@ function rebuild() {
     exportBtn.disabled = true;
     exportZipBtn.disabled = uploadedFiles.length === 0 && batchFiles.length === 0;
     setStatus(
-      `${t("statusBase")}: ${generateBaseInput.checked || uploadedBaseMesh ? t("on") : t("off")}\n${t("statusIdle")}`
+      `${t("statusBase")}: ${generateBaseInput.checked || uploadedBaseSourceGeometry ? t("on") : t("off")}\n${t("statusIdle")}`
     );
     return;
   }
@@ -2254,7 +2192,7 @@ function rebuild() {
     setStatus(
       [
         `${t("statusFile")}: ${svgName}`,
-        `${t("statusBase")}: ${generateBaseInput.checked || uploadedBaseMesh ? t("on") : t("off")}`,
+        `${t("statusBase")}: ${generateBaseInput.checked || uploadedBaseSourceGeometry ? t("on") : t("off")}`,
         `${t("statusBatch")}: ${uploadedFiles.length}`,
         `${t("statusShapes")}: ${shapeCount}`,
         `${t("statusSize")}: ${bbox.x.toFixed(2)} x ${bbox.y.toFixed(2)} x ${bbox.z.toFixed(2)} mm`,
@@ -2286,11 +2224,8 @@ fileInput.addEventListener("change", async (e) => {
 baseStlFileInput.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) {
-    if (uploadedBaseMesh) {
-      uploadedBaseMesh.geometry.dispose();
-      uploadedBaseMesh.material.dispose();
-      uploadedBaseMesh = null;
-    }
+    uploadedBaseSourceGeometry?.dispose?.();
+    uploadedBaseSourceGeometry = null;
     if (baseStlClearBtn) baseStlClearBtn.disabled = true;
     composePreview();
     rebuild();
@@ -2307,14 +2242,9 @@ baseStlFileInput.addEventListener("change", async (e) => {
   // Keep uploaded base top face at Z=0.
   geometry.translate(-center.x, -center.y, -box.max.z);
   geometry.computeVertexNormals();
-  if (isBaseTextureActive()) applyPlanarUVsToGeometry(geometry);
 
-  if (uploadedBaseMesh) {
-    uploadedBaseMesh.geometry.dispose();
-    uploadedBaseMesh.material.dispose();
-  }
-
-  uploadedBaseMesh = new THREE.Mesh(geometry, createBaseMaterial());
+  uploadedBaseSourceGeometry?.dispose?.();
+  uploadedBaseSourceGeometry = geometry;
   if (baseStlClearBtn) baseStlClearBtn.disabled = false;
   rebuild();
   commitHistory();
@@ -2322,11 +2252,8 @@ baseStlFileInput.addEventListener("change", async (e) => {
 
 if (baseStlClearBtn) {
   baseStlClearBtn.addEventListener("click", () => {
-    if (uploadedBaseMesh) {
-      uploadedBaseMesh.geometry?.dispose?.();
-      uploadedBaseMesh.material?.dispose?.();
-      uploadedBaseMesh = null;
-    }
+    uploadedBaseSourceGeometry?.dispose?.();
+    uploadedBaseSourceGeometry = null;
     if (baseStlFileInput) baseStlFileInput.value = "";
     baseStlClearBtn.disabled = true;
     composePreview();
