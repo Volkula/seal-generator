@@ -255,6 +255,51 @@
             </div>
           </label>
 
+          <div id="baseTextureWrap" class="base-texture-panel">
+            <label class="field checkbox">
+              <input id="baseTextureEnabled" type="checkbox" />
+              <span id="baseTextureEnabledLabel">Procedural base texture</span>
+            </label>
+            <div id="baseTextureControls" hidden>
+              <label class="field">
+                <span id="baseTexturePresetLabel">Texture preset</span>
+                <select id="baseTexturePreset">
+                  <option value="forgedMetal">Forged metal</option>
+                </select>
+              </label>
+              <label class="field">
+                <span id="baseTextureFrequencyLabel">Texture frequency</span>
+                <div class="range-row">
+                  <input id="baseTextureFrequency" type="range" min="2" max="48" step="1" value="12" />
+                  <input id="baseTextureFrequencyValue" type="number" min="2" max="48" step="1" value="12" />
+                </div>
+              </label>
+              <label class="field">
+                <span id="baseTextureMarkShapeLabel">Mark shape</span>
+                <select id="baseTextureMarkShape">
+                  <option value="circle">Round hammer</option>
+                  <option value="oval">Oval strike</option>
+                  <option value="strike">Linear brush</option>
+                  <option value="cross">Cross forge</option>
+                </select>
+              </label>
+              <label class="field">
+                <span id="baseTextureMarkSizeLabel">Mark size</span>
+                <div class="range-row">
+                  <input id="baseTextureMarkSize" type="range" min="0.15" max="1.8" step="0.05" value="0.65" />
+                  <input id="baseTextureMarkSizeValue" type="number" min="0.15" max="1.8" step="0.05" value="0.65" />
+                </div>
+              </label>
+              <label class="field">
+                <span id="baseTextureStrengthLabel">Texture strength</span>
+                <div class="range-row">
+                  <input id="baseTextureStrength" type="range" min="0.1" max="1" step="0.05" value="0.75" />
+                  <input id="baseTextureStrengthValue" type="number" min="0.1" max="1" step="0.05" value="0.75" />
+                </div>
+              </label>
+            </div>
+          </div>
+
           <label class="field">
             <span id="baseStlLabel">Extra base STL (add-on)</span>
             <div class="range-row">

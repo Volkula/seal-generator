@@ -71,6 +71,16 @@ const stlAddonOffsetZValueInput = document.getElementById("stlAddonOffsetZValue"
 const stlAddonScaleInput = document.getElementById("stlAddonScale");
 const stlAddonScaleValueInput = document.getElementById("stlAddonScaleValue");
 const stlAddonTransformWrap = document.getElementById("stlAddonTransformWrap");
+const baseTextureEnabledInput = document.getElementById("baseTextureEnabled");
+const baseTextureControls = document.getElementById("baseTextureControls");
+const baseTexturePresetInput = document.getElementById("baseTexturePreset");
+const baseTextureFrequencyInput = document.getElementById("baseTextureFrequency");
+const baseTextureFrequencyValueInput = document.getElementById("baseTextureFrequencyValue");
+const baseTextureMarkShapeInput = document.getElementById("baseTextureMarkShape");
+const baseTextureMarkSizeInput = document.getElementById("baseTextureMarkSize");
+const baseTextureMarkSizeValueInput = document.getElementById("baseTextureMarkSizeValue");
+const baseTextureStrengthInput = document.getElementById("baseTextureStrength");
+const baseTextureStrengthValueInput = document.getElementById("baseTextureStrengthValue");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 const resetSettingsBtn = document.getElementById("resetSettingsBtn");
@@ -193,6 +203,17 @@ const i18n = {
     stlAddonScale: "Add-on STL scale",
     baseDiameter: "Base diameter (mm)",
     baseThickness: "Base thickness (mm)",
+    baseTextureEnabled: "Procedural base texture",
+    baseTexturePreset: "Texture preset",
+    baseTexturePresetForged: "Forged metal",
+    baseTextureFrequency: "Texture frequency",
+    baseTextureMarkShape: "Mark shape",
+    baseTextureMarkCircle: "Round hammer",
+    baseTextureMarkOval: "Oval strike",
+    baseTextureMarkStrike: "Linear brush",
+    baseTextureMarkCross: "Cross forge",
+    baseTextureMarkSize: "Mark size",
+    baseTextureStrength: "Texture strength",
     size: "Size (max dimension, mm)",
     thickness: "Thickness (mm)",
     scaleX: "Scale X",
@@ -291,6 +312,17 @@ const i18n = {
     stlAddonScale: "Масштаб STL доп.",
     baseDiameter: "Диаметр основания (мм)",
     baseThickness: "Толщина основания (мм)",
+    baseTextureEnabled: "Процедурная текстура основания",
+    baseTexturePreset: "Пресет текстуры",
+    baseTexturePresetForged: "Кованый металл",
+    baseTextureFrequency: "Частота текстуры",
+    baseTextureMarkShape: "Форма следов",
+    baseTextureMarkCircle: "Круглый удар",
+    baseTextureMarkOval: "Овальный след",
+    baseTextureMarkStrike: "Линейная кисть",
+    baseTextureMarkCross: "Крестовая ковка",
+    baseTextureMarkSize: "Размер следов",
+    baseTextureStrength: "Сила текстуры",
     size: "Размер (макс. габарит, мм)",
     thickness: "Толщина (мм)",
     scaleX: "Масштаб X",
@@ -812,6 +844,27 @@ function applyLocale() {
   document.getElementById("generateBaseLabel").textContent = t("generateBase");
   document.getElementById("baseDiameterLabel").textContent = t("baseDiameter");
   document.getElementById("baseThicknessLabel").textContent = t("baseThickness");
+  document.getElementById("baseTextureEnabledLabel").textContent = t("baseTextureEnabled");
+  document.getElementById("baseTexturePresetLabel").textContent = t("baseTexturePreset");
+  document.getElementById("baseTextureFrequencyLabel").textContent = t("baseTextureFrequency");
+  document.getElementById("baseTextureMarkShapeLabel").textContent = t("baseTextureMarkShape");
+  document.getElementById("baseTextureMarkSizeLabel").textContent = t("baseTextureMarkSize");
+  document.getElementById("baseTextureStrengthLabel").textContent = t("baseTextureStrength");
+  if (baseTexturePresetInput) {
+    const forgedOpt = baseTexturePresetInput.querySelector('option[value="forgedMetal"]');
+    if (forgedOpt) forgedOpt.textContent = t("baseTexturePresetForged");
+  }
+  if (baseTextureMarkShapeInput) {
+    const shapeLabels = {
+      circle: t("baseTextureMarkCircle"),
+      oval: t("baseTextureMarkOval"),
+      strike: t("baseTextureMarkStrike"),
+      cross: t("baseTextureMarkCross"),
+    };
+    for (const opt of baseTextureMarkShapeInput.options) {
+      if (shapeLabels[opt.value]) opt.textContent = shapeLabels[opt.value];
+    }
+  }
   document.getElementById("sizeLabel").textContent = t("size");
   document.getElementById("thicknessLabel").textContent = t("thickness");
   document.getElementById("scaleXLabel").textContent = t("scaleX");
@@ -931,6 +984,217 @@ function resetAxisConstraint() {
   transformControls.showZ = true;
 }
 
+/** Cached procedural maps for the active base-texture settings. */
+let baseTextureCache = { key: "", colorMap: null, roughnessMap: null };
+
+function disposeBaseTextureCache() {
+  baseTextureCache.colorMap?.dispose?.();
+  baseTextureCache.roughnessMap?.dispose?.();
+  baseTextureCache = { key: "", colorMap: null, roughnessMap: null };
+}
+
+function isBaseTextureActive() {
+  return !!baseTextureEnabledInput?.checked;
+}
+
+function getBaseTextureSettings() {
+  return {
+    preset: baseTexturePresetInput?.value ?? "forgedMetal",
+    frequency: clampNumber(Number(baseTextureFrequencyInput?.value ?? 12), 2, 48),
+    markShape: baseTextureMarkShapeInput?.value ?? "circle",
+    markSize: clampNumber(Number(baseTextureMarkSizeInput?.value ?? 0.65), 0.15, 1.8),
+    strength: clampNumber(Number(baseTextureStrengthInput?.value ?? 0.75), 0.1, 1),
+  };
+}
+
+function baseTextureCacheKey(settings) {
+  return `${settings.preset}|${settings.frequency}|${settings.markShape}|${settings.markSize}|${settings.strength}`;
+}
+
+/** Deterministic pseudo-random in [0, 1) from integer cell coordinates. */
+function forgedCellRand(ix, iy, salt = 0) {
+  let h = (ix * 374761393 + iy * 668265263 + salt * 982451653) | 0;
+  h = (h ^ (h >>> 13)) | 0;
+  h = Math.imul(h, 1274126177);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h / 4294967296;
+}
+
+function drawForgedMark(ctx, cx, cy, cell, shape, markSize, angle, strength) {
+  const baseR = cell * markSize * 0.42;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  ctx.globalCompositeOperation = "multiply";
+
+  const drawSoftBlob = (rx, ry, alpha) => {
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(rx, ry));
+    g.addColorStop(0, `rgba(48, 44, 40, ${alpha * strength})`);
+    g.addColorStop(0.55, `rgba(88, 82, 74, ${alpha * strength * 0.55})`);
+    g.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  switch (shape) {
+    case "oval":
+      drawSoftBlob(baseR * 1.55, baseR * 0.55, 0.95);
+      break;
+    case "strike": {
+      const lg = ctx.createLinearGradient(-baseR * 1.8, 0, baseR * 1.8, 0);
+      lg.addColorStop(0, "rgba(255,255,255,0)");
+      lg.addColorStop(0.35, `rgba(70, 64, 58, ${0.55 * strength})`);
+      lg.addColorStop(0.5, `rgba(42, 38, 34, ${0.9 * strength})`);
+      lg.addColorStop(0.65, `rgba(70, 64, 58, ${0.55 * strength})`);
+      lg.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = lg;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, baseR * 1.85, baseR * 0.28, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "cross":
+      drawSoftBlob(baseR * 0.42, baseR * 1.35, 0.85);
+      ctx.rotate(Math.PI / 2);
+      drawSoftBlob(baseR * 0.42, baseR * 1.35, 0.85);
+      break;
+    case "circle":
+    default:
+      drawSoftBlob(baseR, baseR, 0.9);
+      break;
+  }
+
+  ctx.restore();
+}
+
+function generateForgedMetalMaps(settings) {
+  const size = 512;
+  const colorCanvas = document.createElement("canvas");
+  colorCanvas.width = size;
+  colorCanvas.height = size;
+  const colorCtx = colorCanvas.getContext("2d");
+  const roughCanvas = document.createElement("canvas");
+  roughCanvas.width = size;
+  roughCanvas.height = size;
+  const roughCtx = roughCanvas.getContext("2d");
+
+  const base = colorCtx.createLinearGradient(0, 0, size, size);
+  base.addColorStop(0, "#9a9590");
+  base.addColorStop(0.5, "#86817c");
+  base.addColorStop(1, "#74706b");
+  colorCtx.fillStyle = base;
+  colorCtx.fillRect(0, 0, size, size);
+
+  roughCtx.fillStyle = "#b8b0a8";
+  roughCtx.fillRect(0, 0, size, size);
+
+  const cells = settings.frequency;
+  const cell = size / cells;
+  for (let iy = 0; iy < cells; iy++) {
+    for (let ix = 0; ix < cells; ix++) {
+      const jitterX = (forgedCellRand(ix, iy, 1) - 0.5) * cell * 0.55;
+      const jitterY = (forgedCellRand(ix, iy, 2) - 0.5) * cell * 0.55;
+      const cx = ix * cell + cell * 0.5 + jitterX;
+      const cy = iy * cell + cell * 0.5 + jitterY;
+      const angle = forgedCellRand(ix, iy, 3) * Math.PI;
+      const skip = forgedCellRand(ix, iy, 4);
+      if (skip > 0.93) continue;
+      drawForgedMark(colorCtx, cx, cy, cell, settings.markShape, settings.markSize, angle, settings.strength);
+      drawForgedMark(roughCtx, cx, cy, cell, settings.markShape, settings.markSize * 0.95, angle, settings.strength);
+    }
+  }
+
+  // Fine grain noise for brushed metal feel.
+  const noise = colorCtx.getImageData(0, 0, size, size);
+  const roughNoise = roughCtx.getImageData(0, 0, size, size);
+  for (let i = 0; i < noise.data.length; i += 4) {
+    const n = (forgedCellRand(i, i >> 2, 7) - 0.5) * 18 * settings.strength;
+    noise.data[i] = clampNumber(noise.data[i] + n, 0, 255);
+    noise.data[i + 1] = clampNumber(noise.data[i + 1] + n, 0, 255);
+    noise.data[i + 2] = clampNumber(noise.data[i + 2] + n, 0, 255);
+    const rn = (forgedCellRand(i, i >> 2, 9) - 0.5) * 22 * settings.strength;
+    roughNoise.data[i] = clampNumber(roughNoise.data[i] + rn, 0, 255);
+    roughNoise.data[i + 1] = clampNumber(roughNoise.data[i + 1] + rn, 0, 255);
+    roughNoise.data[i + 2] = clampNumber(roughNoise.data[i + 2] + rn, 0, 255);
+  }
+  colorCtx.putImageData(noise, 0, 0);
+  roughCtx.putImageData(roughNoise, 0, 0);
+
+  const colorMap = new THREE.CanvasTexture(colorCanvas);
+  colorMap.colorSpace = THREE.SRGBColorSpace;
+  colorMap.wrapS = colorMap.wrapT = THREE.RepeatWrapping;
+  colorMap.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy?.() ?? 4);
+
+  const roughnessMap = new THREE.CanvasTexture(roughCanvas);
+  roughnessMap.wrapS = roughnessMap.wrapT = THREE.RepeatWrapping;
+  roughnessMap.anisotropy = colorMap.anisotropy;
+
+  return { colorMap, roughnessMap };
+}
+
+function getBaseProceduralTextures() {
+  if (!isBaseTextureActive()) {
+    disposeBaseTextureCache();
+    return null;
+  }
+  const settings = getBaseTextureSettings();
+  const key = baseTextureCacheKey(settings);
+  if (baseTextureCache.key === key && baseTextureCache.colorMap) return baseTextureCache;
+
+  disposeBaseTextureCache();
+  const maps =
+    settings.preset === "forgedMetal" ? generateForgedMetalMaps(settings) : generateForgedMetalMaps(settings);
+  const repeat = settings.frequency / 6;
+  maps.colorMap.repeat.set(repeat, repeat);
+  maps.roughnessMap.repeat.set(repeat, repeat);
+  maps.colorMap.needsUpdate = true;
+  maps.roughnessMap.needsUpdate = true;
+  baseTextureCache = { key, ...maps };
+  return baseTextureCache;
+}
+
+/** Planar XY UVs for STL bases so procedural textures tile consistently. */
+function applyPlanarUVsToGeometry(geometry) {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const span = Math.max(size.x, size.y, 0.001);
+  const pos = geometry.attributes.position;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = (pos.getX(i) - box.min.x) / span;
+    uv[i * 2 + 1] = (pos.getY(i) - box.min.y) / span;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  geometry.attributes.uv.needsUpdate = true;
+}
+
+function createBaseMaterial() {
+  const tex = getBaseProceduralTextures();
+  if (!tex) {
+    return new THREE.MeshStandardMaterial({
+      color: 0x8b8b8b,
+      metalness: 0.25,
+      roughness: 0.75,
+    });
+  }
+  return new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    metalness: 0.88,
+    roughness: 1,
+    map: tex.colorMap,
+    roughnessMap: tex.roughnessMap,
+  });
+}
+
+function refreshBaseTextureControlsVisibility() {
+  if (!baseTextureControls) return;
+  baseTextureControls.hidden = !isBaseTextureActive();
+}
+
 function makeGeneratedBaseMesh() {
   const diameter = Number(baseDiameterInput.value);
   const thickness = Number(baseThicknessInput.value);
@@ -939,14 +1203,7 @@ function makeGeneratedBaseMesh() {
   geometry.rotateX(Math.PI / 2);
   geometry.translate(0, 0, -thickness / 2);
   geometry.computeVertexNormals();
-  return new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      color: 0x8b8b8b,
-      metalness: 0.25,
-      roughness: 0.75,
-    })
-  );
+  return new THREE.Mesh(geometry, createBaseMaterial());
 }
 
 /** Dispose geometries/materials owned by Object3D (Mesh or Group). */
@@ -1006,12 +1263,7 @@ function flattenObject3DSubsetToSingleMesh(sourceRoot, includeFn, materialFallba
   merged.computeVertexNormals();
   const mesh = new THREE.Mesh(
     merged,
-    pickedMat ||
-      new THREE.MeshStandardMaterial({
-        color: 0x8b8b8b,
-        metalness: 0.25,
-        roughness: 0.75,
-      })
+    pickedMat || createBaseMaterial()
   );
   mesh.position.set(0, 0, 0);
   mesh.rotation.set(0, 0, 0);
@@ -1040,6 +1292,9 @@ function buildComposableBaseRoot(options = {}) {
     group.add(cyl);
   }
   if (hasStl) {
+    if (isBaseTextureActive()) applyPlanarUVsToGeometry(uploadedBaseMesh.geometry);
+    uploadedBaseMesh.material?.dispose?.();
+    uploadedBaseMesh.material = createBaseMaterial();
     stl = uploadedBaseMesh.clone();
     stl.userData.role = "stlAddon";
     const s = clampNumber(Number(stlAddonScaleInput.value ?? 1), 0.05, 5);
@@ -1595,6 +1850,12 @@ function captureState() {
     baseDiameter: baseDiameterInput.value,
     baseThickness: baseThicknessInput.value,
     fitInsetPct: fitInsetPctInput.value,
+    baseTextureEnabled: baseTextureEnabledInput?.checked ?? false,
+    baseTexturePreset: baseTexturePresetInput?.value ?? "forgedMetal",
+    baseTextureFrequency: baseTextureFrequencyInput?.value ?? "12",
+    baseTextureMarkShape: baseTextureMarkShapeInput?.value ?? "circle",
+    baseTextureMarkSize: baseTextureMarkSizeInput?.value ?? "0.65",
+    baseTextureStrength: baseTextureStrengthInput?.value ?? "0.75",
     emblemRotX: emblemGizmoEuler.x,
     emblemRotY: emblemGizmoEuler.y,
     emblemRotZ: emblemGizmoEuler.z,
@@ -1643,6 +1904,13 @@ function applyState(state) {
   baseDiameterInput.value = state.baseDiameter ?? baseDiameterInput.value;
   baseThicknessInput.value = state.baseThickness ?? baseThicknessInput.value;
   fitInsetPctInput.value = state.fitInsetPct ?? fitInsetPctInput.value ?? "10";
+  if (baseTextureEnabledInput) baseTextureEnabledInput.checked = !!state.baseTextureEnabled;
+  if (baseTexturePresetInput) baseTexturePresetInput.value = state.baseTexturePreset ?? "forgedMetal";
+  if (baseTextureFrequencyInput) baseTextureFrequencyInput.value = state.baseTextureFrequency ?? "12";
+  if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = state.baseTextureMarkShape ?? "circle";
+  if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = state.baseTextureMarkSize ?? "0.65";
+  if (baseTextureStrengthInput) baseTextureStrengthInput.value = state.baseTextureStrength ?? "0.75";
+  refreshBaseTextureControlsVisibility();
   if ([state.emblemRotX, state.emblemRotY, state.emblemRotZ].every((v) => typeof v === "number") && Number.isFinite(state.emblemRotX)) {
     emblemGizmoEuler.set(state.emblemRotX, state.emblemRotY, state.emblemRotZ, "XYZ");
   }
@@ -1707,6 +1975,14 @@ function resetSettingsToDefaults() {
   stlAddonOffsetYInput.value = "0";
   stlAddonOffsetZInput.value = "0";
   stlAddonScaleInput.value = "1";
+  if (baseTextureEnabledInput) baseTextureEnabledInput.checked = false;
+  if (baseTexturePresetInput) baseTexturePresetInput.value = "forgedMetal";
+  if (baseTextureFrequencyInput) baseTextureFrequencyInput.value = "12";
+  if (baseTextureMarkShapeInput) baseTextureMarkShapeInput.value = "circle";
+  if (baseTextureMarkSizeInput) baseTextureMarkSizeInput.value = "0.65";
+  if (baseTextureStrengthInput) baseTextureStrengthInput.value = "0.75";
+  disposeBaseTextureCache();
+  refreshBaseTextureControlsVisibility();
   rebuild();
 }
 
@@ -1904,6 +2180,10 @@ function refreshOutputs() {
   stlAddonOffsetYValueInput.value = `${Number(stlAddonOffsetYInput.value).toFixed(1)}`;
   stlAddonOffsetZValueInput.value = `${Number(stlAddonOffsetZInput.value).toFixed(1)}`;
   stlAddonScaleValueInput.value = `${Number(stlAddonScaleInput.value).toFixed(2)}`;
+  if (baseTextureFrequencyValueInput) baseTextureFrequencyValueInput.value = `${Number(baseTextureFrequencyInput.value).toFixed(0)}`;
+  if (baseTextureMarkSizeValueInput) baseTextureMarkSizeValueInput.value = `${Number(baseTextureMarkSizeInput.value).toFixed(2)}`;
+  if (baseTextureStrengthValueInput) baseTextureStrengthValueInput.value = `${Number(baseTextureStrengthInput.value).toFixed(2)}`;
+  refreshBaseTextureControlsVisibility();
   if (stlAddonTransformWrap) stlAddonTransformWrap.hidden = !uploadedBaseMesh;
   densityOut.textContent = `${Number(densityInput.value).toFixed(0)}`;
 }
@@ -2027,20 +2307,14 @@ baseStlFileInput.addEventListener("change", async (e) => {
   // Keep uploaded base top face at Z=0.
   geometry.translate(-center.x, -center.y, -box.max.z);
   geometry.computeVertexNormals();
+  if (isBaseTextureActive()) applyPlanarUVsToGeometry(geometry);
 
   if (uploadedBaseMesh) {
     uploadedBaseMesh.geometry.dispose();
     uploadedBaseMesh.material.dispose();
   }
 
-  uploadedBaseMesh = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      color: 0x8b8b8b,
-      metalness: 0.25,
-      roughness: 0.75,
-    })
-  );
+  uploadedBaseMesh = new THREE.Mesh(geometry, createBaseMaterial());
   if (baseStlClearBtn) baseStlClearBtn.disabled = false;
   rebuild();
   commitHistory();
@@ -2069,9 +2343,14 @@ for (const input of [sizeInput, thicknessInput, scaleXInput, scaleYInput, scaleZ
   });
 }
 
-for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, stlAddonOffsetXInput, stlAddonOffsetYInput, stlAddonOffsetZInput, stlAddonScaleInput]) {
-  input.addEventListener("input", rebuild);
+for (const input of [generateBaseInput, baseDiameterInput, baseThicknessInput, stlAddonOffsetXInput, stlAddonOffsetYInput, stlAddonOffsetZInput, stlAddonScaleInput, baseTextureEnabledInput, baseTexturePresetInput, baseTextureFrequencyInput, baseTextureMarkShapeInput, baseTextureMarkSizeInput, baseTextureStrengthInput]) {
+  if (!input) continue;
+  input.addEventListener("input", () => {
+    if (input === baseTextureEnabledInput) refreshBaseTextureControlsVisibility();
+    rebuild();
+  });
   input.addEventListener("change", () => {
+    if (input === baseTextureEnabledInput) refreshBaseTextureControlsVisibility();
     rebuild();
     commitHistory();
   });
@@ -2139,6 +2418,33 @@ baseThicknessValueInput.addEventListener("input", () => {
   rebuild();
 });
 baseThicknessValueInput.addEventListener("change", commitHistory);
+
+if (baseTextureFrequencyValueInput) {
+  baseTextureFrequencyValueInput.addEventListener("input", () => {
+    const value = clampNumber(Number(baseTextureFrequencyValueInput.value || baseTextureFrequencyInput.value), 2, 48);
+    baseTextureFrequencyInput.value = `${value}`;
+    rebuild();
+  });
+  baseTextureFrequencyValueInput.addEventListener("change", commitHistory);
+}
+
+if (baseTextureMarkSizeValueInput) {
+  baseTextureMarkSizeValueInput.addEventListener("input", () => {
+    const value = clampNumber(Number(baseTextureMarkSizeValueInput.value || baseTextureMarkSizeInput.value), 0.15, 1.8);
+    baseTextureMarkSizeInput.value = `${value}`;
+    rebuild();
+  });
+  baseTextureMarkSizeValueInput.addEventListener("change", commitHistory);
+}
+
+if (baseTextureStrengthValueInput) {
+  baseTextureStrengthValueInput.addEventListener("input", () => {
+    const value = clampNumber(Number(baseTextureStrengthValueInput.value || baseTextureStrengthInput.value), 0.1, 1);
+    baseTextureStrengthInput.value = `${value}`;
+    rebuild();
+  });
+  baseTextureStrengthValueInput.addEventListener("change", commitHistory);
+}
 
 baseOffsetXValueInput.addEventListener("input", () => {
   const value = clampNumber(Number(baseOffsetXValueInput.value || baseOffsetXInput.value), -OFFSET_MM_LIMIT, OFFSET_MM_LIMIT);

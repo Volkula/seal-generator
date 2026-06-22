@@ -116,6 +116,19 @@ select[multiple] {
   margin-bottom: 10px;
 }
 
+.stl-addon-transforms,
+.base-texture-panel {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  margin: 6px 0;
+  background: color-mix(in srgb, var(--panel) 92%, var(--text) 8%);
+}
+
+.base-texture-panel .field:first-child {
+  margin-top: 0;
+}
+
 .tool-box {
   border: 1px solid var(--line);
   border-radius: 6px;
