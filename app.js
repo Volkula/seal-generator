@@ -2145,6 +2145,28 @@ function cloneMeshInWorldSpace(mesh) {
   return cloned;
 }
 
+/** Flatten export tree to one mesh and move bottom face to Z=0 for slicers. */
+function prepareExportMeshRoot(exportObject) {
+  if (!exportObject) return null;
+  exportObject.updateMatrixWorld?.(true);
+  const flat = flattenObject3DToSingleMesh(exportObject);
+  if (!flat) return exportObject;
+  if (exportObject !== flat) disposeObjectGeometryTree(exportObject);
+  flat.updateMatrixWorld(true);
+  flat.geometry.computeBoundingBox();
+  const minZ = flat.geometry.boundingBox.min.z;
+  if (Number.isFinite(minZ) && Math.abs(minZ) > 1e-6) {
+    flat.geometry.translate(0, 0, -minZ);
+    flat.geometry.computeBoundingBox();
+    flat.geometry.computeVertexNormals();
+  }
+  flat.position.set(0, 0, 0);
+  flat.rotation.set(0, 0, 0);
+  flat.scale.set(1, 1, 1);
+  flat.updateMatrixWorld(true);
+  return flat;
+}
+
 /** Max XY span of current base footprint (for STL-only / non-disk bases). Disk-on uses baseDiameter separately. */
 function getEffectiveBaseDiameterXY() {
   const composite = buildComposableBaseRoot();
@@ -3246,8 +3268,13 @@ exportCombinedBtn.addEventListener("click", () => {
       stlAddonClone = null; // ownership handed to exportRoot
       exportObject = exportRoot;
     }
+    const preparedExport = prepareExportMeshRoot(exportObject);
     const exporter = new STLExporter();
-    const stl = exporter.parse(exportObject, { binary: false });
+    const stl = exporter.parse(preparedExport, { binary: true });
+    if (preparedExport !== exportObject) {
+      preparedExport.geometry?.dispose?.();
+      preparedExport.material?.dispose?.();
+    }
     const blob = new Blob([stl], { type: "model/stl" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3333,7 +3360,12 @@ async function runBatchExport() {
         exportObject = exportRoot;
       }
 
-      const stl = exporter.parse(exportObject, { binary: false });
+      const preparedExport = prepareExportMeshRoot(exportObject);
+      const stl = exporter.parse(preparedExport, { binary: true });
+      if (preparedExport !== exportObject) {
+        preparedExport.geometry?.dispose?.();
+        preparedExport.material?.dispose?.();
+      }
       const name = file.name.replace(/\.svg$/i, "") || "model";
       zip.file(`${name}_with_base.stl`, stl);
       success += 1;
